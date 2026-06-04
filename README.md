@@ -85,6 +85,13 @@ Public (no auth):
 - `GET /d/:slug/v/:n` — pinned version
 - `GET /d/:slug/meta` — JSON metadata + version list
 
+## Claude skill
+
+An agent skill in [`skills/vibedeployer`](skills/vibedeployer) lets Claude publish/version
+HTML and return a URL. Install via `npx skills install ./skills/vibedeployer` (or copy it
+into `~/.claude/skills/`), set `VIBEDEPLOYER_TOKEN`, then ask Claude to "publish this HTML
+and give me a link." See [skills/vibedeployer/README.md](skills/vibedeployer/README.md).
+
 ## Layout
 
 ```
