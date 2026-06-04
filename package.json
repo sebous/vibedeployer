@@ -1,0 +1,22 @@
+{
+  "name": "vibedeployer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Version and host HTML docs. Humans and agents log in, upload HTML, get unique URLs.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:local": "wrangler d1 execute vibedeployer-db --local --file=./schema.sql",
+    "db:remote": "wrangler d1 execute vibedeployer-db --remote --file=./schema.sql",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.6.14"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241218.0",
+    "typescript": "^5.7.2",
+    "wrangler": "^3.95.0"
+  }
+}

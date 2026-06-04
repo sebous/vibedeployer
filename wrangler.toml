@@ -1,0 +1,17 @@
+name = "vibedeployer"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# SESSION_SECRET is provided as a secret in prod (`wrangler secret put SESSION_SECRET`)
+# and via .dev.vars locally.
+
+[[d1_databases]]
+binding = "DB"
+database_name = "vibedeployer-db"
+# Fill this in after `wrangler d1 create vibedeployer-db`
+database_id = "58ca5754-aa56-4afd-a2ca-ec8e80a2ff49"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "vibedeployer-docs"
