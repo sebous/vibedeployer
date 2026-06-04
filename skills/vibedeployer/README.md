@@ -10,8 +10,8 @@ the latest, and each version keeps a permanent URL.
 With the [`skills`](https://github.com/obra/skills) CLI:
 
 ```bash
-# from this repo (path or git)
-npx skills install strv/vibedeployer/skills/vibedeployer
+# from GitHub
+npx skills install sebous/vibedeployer/skills/vibedeployer
 
 # or point at a local checkout
 npx skills install ./skills/vibedeployer
