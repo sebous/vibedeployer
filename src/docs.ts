@@ -1,4 +1,4 @@
-import { Env, randomId, randomSlug, now, sha256Hex, isValidCustomSlug } from "./lib";
+import { Env, randomId, randomSlug, now, sha256Hex, isValidCustomSlug, hashPassword } from "./lib";
 
 export interface Doc {
   id: string;
@@ -8,6 +8,7 @@ export interface Doc {
   title: string;
   latest_version: number;
   visibility: string;
+  password_hash: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -88,6 +89,7 @@ export interface CreateDocInput {
   html: string;
   customSlug?: string;
   comment?: string;
+  password?: string;
 }
 
 export async function createDoc(env: Env, input: CreateDocInput): Promise<{ doc: Doc; version: Version }> {
@@ -114,6 +116,7 @@ export async function createDoc(env: Env, input: CreateDocInput): Promise<{ doc:
     .run();
 
   if (input.customSlug) await setCustomSlug(env, docId, input.customSlug);
+  if (input.password) await setDocPassword(env, docId, input.password);
 
   const created = (await getDocById(env, docId))!;
   const version = await addVersion(env, created, { html: input.html, comment: input.comment });
@@ -154,6 +157,27 @@ export async function addVersion(env: Env, doc: Doc, input: AddVersionInput): Pr
 
 export async function updateCustomSlug(env: Env, doc: Doc, customSlug: string): Promise<void> {
   await setCustomSlug(env, doc.id, customSlug);
+}
+
+const MIN_DOC_PASSWORD = 4;
+
+// Sets (or, when password is null/empty, clears) the doc-level password.
+// One password protects the doc across all versions — it is not per version.
+export async function setDocPassword(env: Env, docId: string, password: string | null): Promise<void> {
+  let hash: string | null = null;
+  if (password != null && password !== "") {
+    if (password.length < MIN_DOC_PASSWORD) {
+      throw new ApiError(400, "weak_password", `Password must be at least ${MIN_DOC_PASSWORD} characters.`);
+    }
+    hash = await hashPassword(password);
+  }
+  await env.DB.prepare("UPDATE docs SET password_hash = ?, updated_at = ? WHERE id = ?")
+    .bind(hash, now(), docId)
+    .run();
+}
+
+export async function updateDocPassword(env: Env, doc: Doc, password: string | null): Promise<void> {
+  await setDocPassword(env, doc.id, password);
 }
 
 export async function deleteDoc(env: Env, doc: Doc): Promise<void> {

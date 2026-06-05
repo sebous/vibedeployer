@@ -9,6 +9,8 @@
     "deploy": "wrangler deploy",
     "db:local": "wrangler d1 execute vibedeployer-db --local --file=./schema.sql",
     "db:remote": "wrangler d1 execute vibedeployer-db --remote --file=./schema.sql",
+    "migrate:local": "wrangler d1 execute vibedeployer-db --local --file=./migrations/0001_add_doc_password.sql",
+    "migrate:remote": "wrangler d1 execute vibedeployer-db --remote --file=./migrations/0001_add_doc_password.sql",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

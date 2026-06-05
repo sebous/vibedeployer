@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS docs (
   title          TEXT NOT NULL,
   latest_version INTEGER NOT NULL DEFAULT 0,
   visibility     TEXT NOT NULL DEFAULT 'public',
+  password_hash  TEXT,                  -- optional: PBKDF2 hash; when set, viewers must enter the password (one password per doc, all versions)
   created_at     INTEGER NOT NULL,
   updated_at     INTEGER NOT NULL
 );

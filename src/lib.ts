@@ -84,6 +84,30 @@ export function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+// --- Doc-access cookies (HMAC) -------------------------------------------
+// When a doc is password-protected, an unlocked viewer carries an HMAC token
+// that proves they passed the gate. The token is bound to both the doc id and
+// its current password hash, so changing/removing the password invalidates all
+// previously issued tokens.
+
+async function hmacHex(secret: string, data: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(data));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export async function docAccessToken(secret: string, docId: string, passwordHash: string): Promise<string> {
+  return hmacHex(secret, `doc-access:${docId}:${passwordHash}`);
+}
+
+export const docAccessCookie = (docId: string) => `vda_${docId}`;
+
 // --- API keys ------------------------------------------------------------
 
 export function generateApiKey(): string {

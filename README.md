@@ -10,6 +10,7 @@ Runs entirely on **Cloudflare free tier**: a Worker (Hono) + **D1** (metadata) +
 - **Upload** — paste/file in the dashboard, or `POST` raw HTML / JSON / multipart from an agent.
 - **Versioning** — each upload increments the version; old versions stay viewable forever.
 - **URLs** — auto random slug (`/d/x7k2p9q`) **and** optional custom slug (`/d/q2-report`). Public by link.
+- **Password protection** — optionally lock a doc with a password. One password per doc, covering every version (not set per version); viewers get an unlock prompt before any version is served.
 
 ## Free-tier limits (today)
 
@@ -35,6 +36,8 @@ npx wrangler r2 bucket create vibedeployer-docs
 
 # 3. Apply schema to the remote DB
 npm run db:remote
+# Upgrading an existing deployment? Apply pending migrations too:
+npm run migrate:remote   # adds the docs.password_hash column
 
 # 4. Set a real session secret
 npx wrangler secret put SESSION_SECRET
@@ -63,10 +66,10 @@ curl -X POST $HOST/api/docs \
   --data-binary @report.html
 # → { "url": "https://.../d/x7k2p9q", "slug": "x7k2p9q", "version": 1, ... }
 
-# JSON variant (set title + custom slug inline)
+# JSON variant (set title + custom slug + optional password inline)
 curl -X POST $HOST/api/docs \
   -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
-  -d '{"html":"<h1>hi</h1>","title":"My Doc","custom_slug":"my-doc"}'
+  -d '{"html":"<h1>hi</h1>","title":"My Doc","custom_slug":"my-doc","password":"hunter2"}'
 
 # Push a new version to an existing doc
 curl -X POST $HOST/api/docs/x7k2p9q/versions \
@@ -77,13 +80,18 @@ curl $HOST/api/docs                 -H "Authorization: Bearer $KEY"  # list
 curl $HOST/api/docs/x7k2p9q         -H "Authorization: Bearer $KEY"  # get + versions
 curl -X PUT $HOST/api/docs/x7k2p9q/slug -H "Authorization: Bearer $KEY" \
   -d '{"custom_slug":"renamed"}'                                     # set slug
+curl -X PUT $HOST/api/docs/x7k2p9q/password -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" -d '{"password":"hunter2"}'    # protect (one pass per doc)
+curl -X PUT $HOST/api/docs/x7k2p9q/password -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" -d '{"password":null}'         # remove protection
 curl -X DELETE $HOST/api/docs/x7k2p9q -H "Authorization: Bearer $KEY"
 ```
 
 Public (no auth):
-- `GET /d/:slug` — latest version
+- `GET /d/:slug` — latest version (protected docs show an unlock prompt first)
 - `GET /d/:slug/v/:n` — pinned version
-- `GET /d/:slug/meta` — JSON metadata + version list
+- `GET /d/:slug/meta` — JSON metadata + version list (locked docs expose only `title`/`slug`/`protected` until unlocked)
+- `POST /d/:slug/unlock` — submit the password (form field `password`) to view a protected doc
 
 ## Claude skill
 
@@ -97,16 +105,18 @@ and give me a link." See [skills/vibedeployer/README.md](skills/vibedeployer/REA
 ```
 src/
   index.ts   entry: middleware, public doc serving, route mounting
-  lib.ts     env types, ids/slugs, password + api-key crypto
+  lib.ts     env types, ids/slugs, password + api-key crypto, doc-access cookie HMAC
   auth.ts    sessions, cookie + API-key middleware
   docs.ts    doc/version service (D1 + R2)
   api.ts     agent REST API (Bearer)
   pages.ts   human pages (signup/login/dashboard/upload/keys)
   ui.ts      HTML templates
 schema.sql   D1 schema
+migrations/  incremental D1 migrations for existing deployments
 ```
 
 ## Notes / next steps
 
 - Served docs run in a CSP sandbox (`sandbox allow-scripts allow-forms allow-popups allow-same-origin`) to limit blast radius of arbitrary uploaded HTML.
+- Password-protected docs are gated by an HMAC unlock cookie (signed with `SESSION_SECRET`, bound to the doc + its current password hash, so changing/removing the password instantly invalidates old unlocks). Protected responses are sent `Cache-Control: private, no-store`. The owner bypasses the prompt while logged into the dashboard.
 - Not yet built: per-doc private/unlisted visibility (schema has the column), rate limiting, custom domains, content-dedup across versions.

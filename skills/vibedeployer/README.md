@@ -46,16 +46,23 @@ Once installed, just ask Claude things like:
 
 > "Publish this HTML report and give me a link."
 > "Update the q2-report doc with this new version."
+> "Publish this and put it behind a password."
 
 Claude loads the skill and runs the bundled `scripts/vibedeploy.sh`:
 
 ```bash
-scripts/vibedeploy.sh create report.html --title "Q2 Report" --slug q2-report
-scripts/vibedeploy.sh push   q2-report report.html --comment "fixed totals"
+scripts/vibedeploy.sh create    report.html --title "Q2 Report" --slug q2-report
+scripts/vibedeploy.sh create    report.html --slug q2-report --password "hunter2"  # protected
+scripts/vibedeploy.sh push      q2-report report.html --comment "fixed totals"
+scripts/vibedeploy.sh password  q2-report "hunter2"   # add/change password later
+scripts/vibedeploy.sh unprotect q2-report             # remove the password
 scripts/vibedeploy.sh list
-scripts/vibedeploy.sh get    q2-report
-scripts/vibedeploy.sh delete q2-report
+scripts/vibedeploy.sh get       q2-report
+scripts/vibedeploy.sh delete    q2-report
 ```
+
+A password protects the whole doc (all versions) — set it once, not per version. Viewers without
+it get an unlock prompt before any version is shown.
 
 ## Contents
 

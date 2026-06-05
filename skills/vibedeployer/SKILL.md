@@ -28,6 +28,9 @@ Use the bundled script (`curl`-only, no install). From the skill dir:
 # Publish a new doc → prints JSON with the "url"
 scripts/vibedeploy.sh create report.html --title "Q2 Report" --slug q2-report
 
+# Publish a password-protected doc (viewers must enter the password)
+scripts/vibedeploy.sh create report.html --slug q2-report --password "hunter2"
+
 # Update it later → bumps to the next version, same URL serves latest
 scripts/vibedeploy.sh push q2-report report.html --comment "fixed totals"
 ```
@@ -39,20 +42,26 @@ Then give the user the `"url"` field from the response.
 1. Ensure the HTML exists as a file. If you generated it inline, write it to a `.html` file first.
 2. Ensure `VIBEDEPLOYER_TOKEN` is set (ask the user if not).
 3. New page → `create`. Updating an existing page → `push <slug>`.
-4. Report the returned `url` (latest) to the user. Mention the per-version URL only if they need to pin a version.
+4. If the user wants the doc private, pass `--password` on `create` (or run `password <slug> <pass>` later).
+   The password protects the whole doc — set it once, **not per version**. Give the password to the
+   user (and anyone they want to share with) over a separate channel; the link alone won't open it.
+5. Report the returned `url` (latest) to the user. Mention the per-version URL only if they need to pin a version.
 
 ## Commands
 
 | Command | Purpose |
 |---|---|
-| `create <file.html> [--slug NAME] [--title T]` | New doc + version 1 |
+| `create <file.html> [--slug NAME] [--title T] [--password PASS]` | New doc + version 1 |
 | `push <slug> <file.html> [--comment MSG]` | Add a new version |
 | `list` | List your docs |
 | `get <slug>` | Doc + version history |
+| `password <slug> <PASS>` | Set/change the doc password (one per doc) |
+| `unprotect <slug>` | Remove the doc password |
 | `delete <slug>` | Delete a doc and all versions |
 
 `--slug` is optional; without it a random short slug is generated. Slugs are
-`a-z 0-9 -`, 3–64 chars. Files cap at 5 MB.
+`a-z 0-9 -`, 3–64 chars. Files cap at 5 MB. Passwords are 4+ chars and protect
+every version of the doc (one password per doc, not per version).
 
 ## Raw API (no script)
 

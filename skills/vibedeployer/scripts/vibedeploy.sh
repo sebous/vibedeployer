@@ -17,14 +17,22 @@ AUTH=(-H "Authorization: Bearer ${VIBEDEPLOYER_TOKEN}")
 usage() {
   cat >&2 <<EOF
 usage:
-  vibedeploy create <file.html> [--slug NAME] [--title TITLE]   create a doc (+v1)
-  vibedeploy push   <slug> <file.html> [--comment MSG]          add a new version
-  vibedeploy list                                               list your docs
-  vibedeploy get    <slug>                                      doc + version metadata
-  vibedeploy delete <slug>                                      delete a doc
+  vibedeploy create <file.html> [--slug NAME] [--title TITLE] [--password PASS]  create a doc (+v1)
+  vibedeploy push     <slug> <file.html> [--comment MSG]       add a new version
+  vibedeploy list                                              list your docs
+  vibedeploy get      <slug>                                   doc + version metadata
+  vibedeploy password <slug> <PASS>                            set/change the doc password
+  vibedeploy unprotect <slug>                                  remove the doc password
+  vibedeploy delete   <slug>                                   delete a doc
+
+A password protects the whole doc (all versions) — set it once, not per version.
+Viewers without it get an unlock prompt before any version is shown.
 EOF
   exit 1
 }
+
+# JSON-escape a string value (for embedding in a request body).
+json_escape() { printf %s "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
 
 cmd="${1:-}"; shift || usage
 case "$cmd" in
@@ -33,8 +41,9 @@ case "$cmd" in
     [ -f "$file" ] || die "file not found: $file"
     q=""
     while [ $# -gt 0 ]; do case "$1" in
-      --slug)  q="${q}&custom_slug=$2"; shift 2;;
-      --title) q="${q}&title=$(printf %s "$2" | sed 's/ /%20/g')"; shift 2;;
+      --slug)     q="${q}&custom_slug=$2"; shift 2;;
+      --title)    q="${q}&title=$(printf %s "$2" | sed 's/ /%20/g')"; shift 2;;
+      --password) q="${q}&password=$(printf %s "$2" | sed 's/ /%20/g')"; shift 2;;
       *) die "unknown flag: $1";;
     esac; done
     curl -fsS -X POST "${URL}/api/docs?${q#&}" "${AUTH[@]}" \
@@ -53,6 +62,17 @@ case "$cmd" in
     echo ;;
   list)   curl -fsS "${URL}/api/docs" "${AUTH[@]}"; echo ;;
   get)    [ -n "${1:-}" ] || usage; curl -fsS "${URL}/api/docs/$1" "${AUTH[@]}"; echo ;;
+  password)
+    slug="${1:-}"; pass="${2:-}"
+    [ -n "$slug" ] && [ -n "$pass" ] || usage
+    curl -fsS -X PUT "${URL}/api/docs/${slug}/password" "${AUTH[@]}" \
+      -H "Content-Type: application/json" -d "{\"password\":\"$(json_escape "$pass")\"}"
+    echo ;;
+  unprotect)
+    slug="${1:-}"; [ -n "$slug" ] || usage
+    curl -fsS -X PUT "${URL}/api/docs/${slug}/password" "${AUTH[@]}" \
+      -H "Content-Type: application/json" -d '{"password":null}'
+    echo ;;
   delete) [ -n "${1:-}" ] || usage; curl -fsS -X DELETE "${URL}/api/docs/$1" "${AUTH[@]}"; echo ;;
   *) usage ;;
 esac
