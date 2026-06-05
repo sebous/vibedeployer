@@ -133,7 +133,7 @@ export function landingPage(): string {
   --data-binary @report.html
 # → { "url": "https://YOUR-HOST/d/x7k2p9q", "version": 1 }</pre></div>
 
-  <div class="card"><h2>Claude Code skill</h2>
+  <div class="card"><h2>Agent skill</h2>
   <p class="muted" style="margin:0 0 14px">Teach your agent to publish HTML in one line. Install the <a href="https://github.com/sebous/vibedeployer/tree/main/skills/vibedeployer" target="_blank" rel="noopener">vibedeployer skill</a>, then just ask Claude to "host this as a page."</p>
   <pre>npx skills install sebous/vibedeployer/skills/vibedeployer</pre></div>`;
 }
