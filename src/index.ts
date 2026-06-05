@@ -20,12 +20,14 @@ app.use("*", async (c, next) => {
 // --- Public doc serving --------------------------------------------------
 const SECURITY = "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; sandbox allow-scripts allow-forms allow-popups allow-same-origin;";
 
-async function serve(c: any, r2Key: string, etag: string) {
+// `immutable` is safe only for pinned versions — their content never changes.
+// The latest endpoint keeps short revalidation since its content moves.
+async function serve(c: any, r2Key: string, etag: string, cacheControl = "public, max-age=60") {
   if (c.req.header("If-None-Match") === etag) return c.body(null, 304);
   const html = await fetchHtml(c.env, r2Key);
   if (html === null) return c.notFound();
   return c.html(html, 200, {
-    "Cache-Control": "public, max-age=60",
+    "Cache-Control": cacheControl,
     ETag: etag,
     "Content-Security-Policy": SECURITY,
   });
@@ -48,7 +50,7 @@ app.get("/d/:slug/v/:n", async (c) => {
   if (!Number.isInteger(n)) return notFound(c);
   const v = await getVersion(c.env, doc.id, n);
   if (!v) return notFound(c);
-  return serve(c, v.r2_key, `"${doc.id}-${v.version}-${v.content_hash.slice(0, 12)}"`);
+  return serve(c, v.r2_key, `"${doc.id}-${v.version}-${v.content_hash.slice(0, 12)}"`, "public, max-age=31536000, immutable");
 });
 
 // Lightweight JSON metadata for a public doc (handy for agents pre-auth).
