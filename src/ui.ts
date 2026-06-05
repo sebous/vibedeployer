@@ -32,7 +32,24 @@ pre{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padd
 .flash.ok{background:rgba(63,185,80,.12);border:1px solid var(--ok);color:#9ff0a8}
 .pill{display:inline-block;font-size:12px;padding:2px 8px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);color:var(--mut)}
 .hero{padding:48px 0 24px}.hero h1{font-size:34px;margin:0 0 10px;letter-spacing:-1px}
+.hero .lead{font-size:18px;max-width:620px}
 .keybox{background:#0e1320;border:1px dashed var(--acc);border-radius:8px;padding:12px;word-break:break-all;font-family:ui-monospace,monospace}
+@media (max-width:640px){
+  .wrap{padding:20px 16px 64px}
+  header.top{padding:14px 16px;flex-wrap:wrap;gap:10px}
+  header.top .brand{font-size:16px}
+  header.top nav.row{gap:8px}
+  .btn,button{padding:10px 14px}
+  .hero{padding:32px 0 16px}
+  .hero h1{font-size:26px;letter-spacing:-.5px}
+  .hero .lead{font-size:16px}
+  .hero .row{gap:8px}
+  .hero .row .btn{flex:1 1 auto;text-align:center}
+  .card{padding:16px}
+  .grid{grid-template-columns:1fr !important}
+  pre{font-size:12px;padding:12px}
+  table{display:block;overflow-x:auto;white-space:nowrap}
+}
 `;
 
 export function layout(title: string, body: string, user?: { email: string }): string {
@@ -61,7 +78,7 @@ export function flash(msg: string | undefined, kind: "err" | "ok" = "err"): stri
 export function landingPage(): string {
   return `<div class="hero">
     <h1>Host & version HTML, instantly.</h1>
-    <p class="muted" style="font-size:18px;max-width:620px">Upload an HTML file — get a unique URL. Every upload is a new version with full history. Built for humans <em>and</em> agents: log in via the web, or push with an API key.</p>
+    <p class="muted lead">Upload an HTML file — get a unique URL. Every upload is a new version with full history. Built for humans <em>and</em> agents: log in via the web, or push with an API key.</p>
     <div class="row" style="margin-top:20px"><a class="btn" href="/signup">Get started — free</a><a class="btn ghost" href="/login">Log in</a></div>
   </div>
   <div class="card"><h2>For agents (API)</h2>
