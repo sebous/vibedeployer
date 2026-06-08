@@ -45,14 +45,23 @@ Then give the user the `"url"` field from the response.
 
 | Command | Purpose |
 |---|---|
-| `create <file.html> [--slug NAME] [--title T]` | New doc + version 1 |
+| `create <file.html> [--slug NAME] [--title T] [--password PW]` | New doc + version 1 |
 | `push <slug> <file.html> [--comment MSG]` | Add a new version |
 | `list` | List your docs |
 | `get <slug>` | Doc + version history |
+| `password <slug> <PW\|--remove>` | Set/rotate/remove the doc password |
 | `delete <slug>` | Delete a doc and all versions |
 
 `--slug` is optional; without it a random short slug is generated. Slugs are
 `a-z 0-9 -`, 3–64 chars. Files cap at 5 MB.
+
+## Password protection (optional)
+
+Pass `--password` on `create`, or run `password <slug> <PW>` later, to gate a doc
+(one password covers all its versions). Viewers then need it — share the link
+**and** the password. To fetch a protected doc yourself, add an `X-Doc-Password`
+header or `?password=` query; in a browser an unlock form appears. Remove with
+`password <slug> --remove`.
 
 ## Raw API (no script)
 

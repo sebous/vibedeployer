@@ -10,6 +10,7 @@ Runs entirely on **Cloudflare free tier**: a Worker (Hono) + **D1** (metadata) +
 - **Upload** — paste/file in the dashboard, or `POST` raw HTML / JSON / multipart from an agent.
 - **Versioning** — each upload increments the version; old versions stay viewable forever.
 - **URLs** — auto random slug (`/d/x7k2p9q`) **and** optional custom slug (`/d/q2-report`). Public by link.
+- **Password protection** — optionally gate a doc behind a password (one per doc, covering every version). Unlock via the browser form, or an `X-Doc-Password` header / `?password=` query for agents.
 
 ## Free-tier limits (today)
 

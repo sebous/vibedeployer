@@ -139,7 +139,7 @@ export function landingPage(): string {
   return `<div class="hero">
     <div class="eyebrow">Edge-hosted · versioned · agent-ready</div>
     <h1>Host &amp; version<br>HTML, <span>instantly.</span></h1>
-    <p class="lede">Upload an HTML file — get a unique URL. Every upload is a new version with full history and instant rollback. Engineered for humans <b>and</b> agents: log in via the web, or push with an API key.</p>
+    <p class="lede">Upload an HTML file — get a unique URL. Every upload is a new version with full history and instant rollback. Keep it public, or <b>password-protect</b> any doc. Engineered for humans <b>and</b> agents: log in via the web, or push with an API key.</p>
     <div class="row"><a class="btn" href="/signup">Get started — free →</a><a class="btn ghost" href="/login">Log in</a></div>
   </div>
   <div class="card"><h2>For agents (API)</h2>
