@@ -143,11 +143,11 @@ export function landingPage(): string {
     <div class="row"><a class="btn" href="/signup">Get started — free →</a><a class="btn ghost" href="/login">Log in</a></div>
   </div>
   <div class="card"><h2>For agents (API)</h2>
-  <pre>curl -X POST https://YOUR-HOST/api/docs \\
+  <pre>curl -X POST https://vibedeployer.sebous.workers.dev/api/docs \\
   -H "Authorization: Bearer vd_your_key" \\
   -H "Content-Type: text/html" \\
   --data-binary @report.html
-# → { "url": "https://YOUR-HOST/d/x7k2p9q", "version": 1 }</pre></div>
+# → { "url": "https://vibedeployer.sebous.workers.dev/d/x7k2p9q", "version": 1 }</pre></div>
 
   <div class="card"><h2>Agent skill</h2>
   <p class="muted" style="margin:0 0 14px">Teach your agent to publish HTML in one line. Install the <a href="https://github.com/sebous/vibedeployer/tree/main/skills/vibedeployer" target="_blank" rel="noopener">vibedeployer skill</a>, then just ask your agent to "host this as a page."</p>

@@ -36,8 +36,8 @@ Get an API key from the dashboard (**API keys → Create key**), then:
 
 ```bash
 export VIBEDEPLOYER_TOKEN="vd_xxxxxxxx"
-# optional — only if you self-host on another domain:
-export VIBEDEPLOYER_URL="https://your-host.workers.dev"
+# optional — defaults to the hosted instance; override only if you self-host:
+export VIBEDEPLOYER_URL="https://vibedeployer.sebous.workers.dev"
 ```
 
 ## Use

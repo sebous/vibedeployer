@@ -14,7 +14,7 @@ Requires an API key (`vd_...`) from the dashboard → "API keys". Export it:
 
 ```bash
 export VIBEDEPLOYER_TOKEN="vd_xxxxxxxx"
-# optional, only if self-hosted on a different host:
+# optional — defaults to the hosted instance; override only if you self-host:
 export VIBEDEPLOYER_URL="https://vibedeployer.sebous.workers.dev"
 ```
 
