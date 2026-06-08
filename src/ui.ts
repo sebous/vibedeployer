@@ -92,6 +92,22 @@ pre{background:rgba(7,18,30,.85);border:1px solid var(--line);border-left:2px so
 .hero h1 span::after{content:"";position:absolute;left:0;right:0;bottom:6px;height:8px;background:rgba(54,214,255,.18)}
 .hero p.lede{font-size:16px;max-width:600px;color:var(--mut);margin:0 0 30px}
 .hero p.lede b{color:var(--fg)}
+@media (max-width:640px){
+  .wrap{padding:20px 16px 64px}
+  header.top{padding:14px 16px;flex-wrap:wrap;gap:10px}
+  header.top .brand{font-size:16px}
+  header.top nav.row{gap:8px}
+  .btn,button{padding:10px 14px}
+  .hero{padding:32px 0 16px}
+  .hero h1{font-size:32px;letter-spacing:-1px}
+  .hero p.lede{font-size:15px}
+  .hero .row{gap:8px}
+  .hero .row .btn{flex:1 1 auto;text-align:center}
+  .card{padding:16px}
+  .grid{grid-template-columns:1fr !important}
+  pre{font-size:12px;padding:12px}
+  table{display:block;overflow-x:auto;white-space:nowrap}
+}
 `;
 
 const FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800;900&family=Chivo+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">`;
