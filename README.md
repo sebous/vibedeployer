@@ -77,6 +77,8 @@ curl $HOST/api/docs                 -H "Authorization: Bearer $KEY"  # list
 curl $HOST/api/docs/x7k2p9q         -H "Authorization: Bearer $KEY"  # get + versions
 curl -X PUT $HOST/api/docs/x7k2p9q/slug -H "Authorization: Bearer $KEY" \
   -d '{"custom_slug":"renamed"}'                                     # set slug
+curl -X PUT $HOST/api/docs/x7k2p9q/password -H "Authorization: Bearer $KEY" \
+  -d '{"password":"s3cret"}'            # protect ({"password":null} removes it)
 curl -X DELETE $HOST/api/docs/x7k2p9q -H "Authorization: Bearer $KEY"
 ```
 
@@ -84,6 +86,20 @@ Public (no auth):
 - `GET /d/:slug` — latest version
 - `GET /d/:slug/v/:n` — pinned version
 - `GET /d/:slug/meta` — JSON metadata + version list
+
+### Password-protected docs
+
+Give a doc a password (in the dashboard, via the `password` endpoint above, or by
+passing `"password"` at create time). One password gates all of that doc's
+versions. Protected `GET /d/...` requests return `401 password_required` until
+unlocked — supply it by header or query (no API token needed):
+
+```bash
+curl -H "X-Doc-Password: s3cret" $HOST/d/x7k2p9q     # header
+curl "$HOST/d/x7k2p9q?password=s3cret"               # query param
+```
+
+In a browser an unlock form is shown, and a cookie keeps the doc unlocked.
 
 ## Claude skill
 
@@ -109,4 +125,8 @@ schema.sql   D1 schema
 ## Notes / next steps
 
 - Served docs run in a CSP sandbox (`sandbox allow-scripts allow-forms allow-popups allow-same-origin`) to limit blast radius of arbitrary uploaded HTML.
-- Not yet built: per-doc private/unlisted visibility (schema has the column), rate limiting, custom domains, content-dedup across versions.
+- **Upgrading an existing deployment** for password protection: run the migration once —
+  `npx wrangler d1 execute vibedeployer-db --remote --file=./migrations/0001_doc_password.sql`
+  (fresh installs get the column from `schema.sql`).
+- Protected docs are served with `Cache-Control: private, no-store`; unlock cookies are stateless HMACs over `SESSION_SECRET`, so rotating/removing a password instantly revokes prior unlocks.
+- Not yet built: per-doc unlisted visibility (schema has the column), rate limiting, custom domains, content-dedup across versions.

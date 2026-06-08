@@ -1,9 +1,46 @@
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import type { MiddlewareHandler } from "hono";
-import { AppContext, Env, randomId, now, sha256Hex } from "./lib";
+import { AppContext, Env, randomId, now, sha256Hex, hmacSign, verifyPassword, timingSafeEqual } from "./lib";
+import type { Doc } from "./docs";
 
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
 const COOKIE = "vd_session";
+
+const UNLOCK_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
+const unlockCookieName = (docId: string) => `vd_u_${docId}`;
+
+// Stateless unlock token: HMAC over (docId + current hash). Rotating or
+// removing the password changes the hash, so old cookies stop validating.
+async function unlockToken(c: AppContext, doc: Doc): Promise<string> {
+  return hmacSign(c.env.SESSION_SECRET, `${doc.id}:${doc.password_hash ?? ""}`);
+}
+
+export async function setDocUnlockCookie(c: AppContext, doc: Doc): Promise<void> {
+  setCookie(c, unlockCookieName(doc.id), await unlockToken(c, doc), {
+    httpOnly: true,
+    secure: true,
+    sameSite: "Lax",
+    path: "/d",
+    maxAge: Math.floor(UNLOCK_TTL_MS / 1000),
+  });
+}
+
+// True if the doc is unprotected, already unlocked via cookie, or a correct
+// password was supplied (X-Doc-Password header or ?password= query). When
+// unlocked via a supplied password, the unlock cookie is set for next time.
+export async function isDocUnlocked(c: AppContext, doc: Doc): Promise<boolean> {
+  if (!doc.password_hash) return true;
+
+  const cookie = getCookie(c, unlockCookieName(doc.id));
+  if (cookie && timingSafeEqual(cookie, await unlockToken(c, doc))) return true;
+
+  const supplied = c.req.header("X-Doc-Password") ?? c.req.query("password");
+  if (supplied && (await verifyPassword(supplied, doc.password_hash))) {
+    await setDocUnlockCookie(c, doc);
+    return true;
+  }
+  return false;
+}
 
 export async function createSession(c: AppContext, userId: string): Promise<void> {
   const token = randomId(32);

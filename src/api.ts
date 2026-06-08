@@ -8,8 +8,10 @@ import {
   listDocsByOwner,
   listVersions,
   updateCustomSlug,
+  setDocPassword,
   deleteDoc,
   docUrl,
+  isProtected,
   ApiError,
 } from "./docs";
 
@@ -24,17 +26,17 @@ function origin(c: any): string {
 
 // Accept either raw HTML body (Content-Type text/html), JSON {html,title,custom_slug,comment},
 // or multipart form with a `file`/`html` field.
-async function readPayload(c: any): Promise<{ html: string; title?: string; customSlug?: string; comment?: string }> {
+async function readPayload(c: any): Promise<{ html: string; title?: string; customSlug?: string; comment?: string; password?: string }> {
   const ct = (c.req.header("Content-Type") ?? "").toLowerCase();
   if (ct.includes("application/json")) {
     const j = await c.req.json();
-    return { html: String(j.html ?? ""), title: j.title, customSlug: j.custom_slug, comment: j.comment };
+    return { html: String(j.html ?? ""), title: j.title, customSlug: j.custom_slug, comment: j.comment, password: j.password };
   }
   if (ct.includes("multipart/form-data") || ct.includes("application/x-www-form-urlencoded")) {
     const b = await c.req.parseBody();
     const file = b.file as File | undefined;
     const html = file && file.size > 0 ? await file.text() : String(b.html ?? "");
-    return { html, title: b.title as string, customSlug: b.custom_slug as string, comment: b.comment as string };
+    return { html, title: b.title as string, customSlug: b.custom_slug as string, comment: b.comment as string, password: b.password as string };
   }
   // raw body (default for `--data-binary @file.html`)
   return {
@@ -42,6 +44,7 @@ async function readPayload(c: any): Promise<{ html: string; title?: string; cust
     title: c.req.query("title"),
     customSlug: c.req.query("custom_slug"),
     comment: c.req.query("comment"),
+    password: c.req.query("password"),
   };
 }
 
@@ -53,6 +56,7 @@ function serializeDoc(c: any, doc: any) {
     title: doc.title,
     latest_version: doc.latest_version,
     url: docUrl(origin(c), doc),
+    protected: isProtected(doc),
     created_at: doc.created_at,
     updated_at: doc.updated_at,
   };
@@ -70,6 +74,7 @@ api.post("/api/docs", async (c) => {
       title: p.title,
       customSlug: p.customSlug?.trim() || undefined,
       comment: p.comment,
+      password: p.password?.trim() || undefined,
     });
     return c.json({ ...serializeDoc(c, doc), version: version.version }, 201);
   } catch (e) {
@@ -120,6 +125,23 @@ api.put("/api/docs/:slug/slug", async (c) => {
   try {
     const j = await c.req.json();
     await updateCustomSlug(c.env, doc, String(j.custom_slug ?? "").trim());
+    const fresh = await resolveDoc(c.env, doc.slug);
+    return c.json(serializeDoc(c, fresh));
+  } catch (e) {
+    return apiErr(c, e);
+  }
+});
+
+// Set / rotate / remove a doc's password.
+// Body: { "password": "secret" } to set/rotate, { "password": null } (or "") to remove.
+api.put("/api/docs/:slug/password", async (c) => {
+  const user = c.get("user")!;
+  const doc = await resolveDoc(c.env, c.req.param("slug"));
+  if (!doc || doc.owner_id !== user.id) return c.json({ error: "not_found" }, 404);
+  try {
+    const j = await c.req.json();
+    const password = j.password == null ? null : String(j.password);
+    await setDocPassword(c.env, doc, password?.trim() ? password : null);
     const fresh = await resolveDoc(c.env, doc.slug);
     return c.json(serializeDoc(c, fresh));
   } catch (e) {

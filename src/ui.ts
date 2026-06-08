@@ -170,6 +170,20 @@ export function authPage(mode: "login" | "signup", err?: string): string {
   </div>`;
 }
 
+// Shown when a visitor hits a password-protected doc without being unlocked.
+export function unlockPage(slug: string, redirect: string, err?: string): string {
+  return `<div class="card" style="max-width:440px;margin:60px auto">
+    <h2>Protected document</h2>
+    <p class="muted" style="margin:0 0 4px">This page is password-protected. Enter the password to view it.</p>
+    ${flash(err)}
+    <form method="post" action="/d/${escapeHtml(slug)}/unlock">
+      <input type="hidden" name="redirect" value="${escapeHtml(redirect)}">
+      <label>Password</label><input name="password" type="password" required autofocus>
+      <div style="margin-top:20px"><button type="submit">Unlock →</button></div>
+    </form>
+  </div>`;
+}
+
 interface ApiKeyRow {
   id: string;
   name: string;
@@ -191,8 +205,9 @@ export function dashboard(opts: {
     ? docs
         .map((d) => {
           const url = `/d/${d.custom_slug ?? d.slug}`;
+          const lock = d.password_hash ? ' <span class="pill" style="color:var(--amber)">🔒 protected</span>' : "";
           return `<tr>
-        <td><a href="/app/doc/${d.id}">${escapeHtml(d.title)}</a><br><a class="muted" href="${url}" target="_blank">${escapeHtml(origin + url)}</a></td>
+        <td><a href="/app/doc/${d.id}">${escapeHtml(d.title)}</a>${lock}<br><a class="muted" href="${url}" target="_blank">${escapeHtml(origin + url)}</a></td>
         <td><span class="pill">v${d.latest_version}</span></td>
         <td class="muted">${fmtDate(d.updated_at)}</td>
       </tr>`;
@@ -229,6 +244,7 @@ export function dashboard(opts: {
         <div><label>Title (optional)</label><input name="title" placeholder="auto-detected from &lt;title&gt;"></div>
         <div><label>Custom slug (optional)</label><input name="custom_slug" placeholder="my-report"></div>
       </div>
+      <label>Password (optional)</label><input name="password" type="password" autocomplete="new-password" placeholder="leave blank for a public doc">
       <div style="margin-top:16px"><button type="submit">Publish</button></div>
     </form>
   </div>
@@ -261,18 +277,41 @@ export function docDetail(opts: { origin: string; doc: Doc; versions: Version[];
     )
     .join("");
 
+  const protectedDoc = !!doc.password_hash;
+  const lockPill = protectedDoc ? ' <span class="pill" style="color:var(--amber)">🔒 protected</span>' : "";
+  const passwordCard = protectedDoc
+    ? `<div class="card"><h2>Password protection</h2>
+        <p class="muted" style="margin:0 0 14px">This doc is <b style="color:var(--amber)">password-protected</b>. Visitors must enter the password to view any version.</p>
+        <form method="post" action="/app/doc/${doc.id}/password" class="row">
+          <input name="password" type="password" autocomplete="new-password" placeholder="new password" style="max-width:280px">
+          <button type="submit">Change password</button>
+        </form>
+        <form method="post" action="/app/doc/${doc.id}/password/remove" style="margin-top:14px" onsubmit="return confirm('Remove password protection? The doc will become public.')">
+          <button class="danger" type="submit">Remove protection</button>
+        </form>
+      </div>`
+    : `<div class="card"><h2>Password protection</h2>
+        <p class="muted" style="margin:0 0 14px">This doc is <b>public</b> — anyone with the link can view it. Set a password to require it before viewing.</p>
+        <form method="post" action="/app/doc/${doc.id}/password" class="row">
+          <input name="password" type="password" autocomplete="new-password" placeholder="set a password" style="max-width:280px">
+          <button type="submit">Set password</button>
+        </form>
+      </div>`;
+
   return `
   <p><a href="/app">← Dashboard</a></p>
   ${opts.flashMsg ? flash(opts.flashMsg, opts.flashKind ?? "ok") : ""}
   <div class="card">
     <h2>${escapeHtml(doc.title)}</h2>
-    <p>Live URL: <a href="${liveUrl}" target="_blank">${escapeHtml(origin + liveUrl)}</a> <span class="pill">always latest</span></p>
+    <p>Live URL: <a href="${liveUrl}" target="_blank">${escapeHtml(origin + liveUrl)}</a> <span class="pill">always latest</span>${lockPill}</p>
     <p class="muted">Random slug: <code>${escapeHtml(doc.slug)}</code></p>
     <form method="post" action="/app/doc/${doc.id}/slug" class="row">
       <input name="custom_slug" value="${escapeHtml(doc.custom_slug ?? "")}" placeholder="custom-slug" style="max-width:280px">
       <button type="submit">Set custom slug</button>
     </form>
   </div>
+
+  ${passwordCard}
 
   <div class="card"><h2>Upload new version</h2>
     <form method="post" action="/app/doc/${doc.id}/versions" enctype="multipart/form-data">

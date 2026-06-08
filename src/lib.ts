@@ -98,6 +98,20 @@ export async function sha256Hex(input: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+// HMAC-SHA256(secret, msg) → hex. Used to mint stateless, tamper-proof unlock
+// tokens for password-protected docs (no extra DB rows needed).
+export async function hmacSign(secret: string, msg: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(msg));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")

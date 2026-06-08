@@ -7,7 +7,8 @@ Auth: `Authorization: Bearer <vd_...>` on every `/api/*` call.
 
 ### `POST /api/docs` — create a doc (+ version 1)
 Body may be raw HTML (`Content-Type: text/html`), JSON, or multipart (`file`/`html` field).
-Optional fields (JSON keys, or query params for raw body): `title`, `custom_slug`, `comment`.
+Optional fields (JSON keys, or query params for raw body): `title`, `custom_slug`, `comment`, `password`.
+Pass `password` to publish a password-protected doc (see "Password protection" below).
 
 ```bash
 # raw
@@ -55,6 +56,18 @@ curl -X PUT "$VIBEDEPLOYER_URL/api/docs/u2ykan6/slug" \
   -H "Authorization: Bearer $TOKEN" -d '{"custom_slug":"renamed"}'
 ```
 
+### `PUT /api/docs/:slug/password` — set / rotate / remove password
+```bash
+# set or rotate
+curl -X PUT "$VIBEDEPLOYER_URL/api/docs/u2ykan6/password" \
+  -H "Authorization: Bearer $TOKEN" -d '{"password":"s3cret"}'
+# remove protection (make public again)
+curl -X PUT "$VIBEDEPLOYER_URL/api/docs/u2ykan6/password" \
+  -H "Authorization: Bearer $TOKEN" -d '{"password":null}'
+```
+Returns the serialized doc (includes `"protected": true|false`). The password is
+never returned. One password per doc; it gates every version.
+
 ### `DELETE /api/docs/:slug` — delete doc + all versions
 Returns `{ "deleted": true }`.
 
@@ -64,6 +77,21 @@ Returns `{ "deleted": true }`.
 - `GET /d/:slug/v/:n` — pinned version `n` (HTML)
 - `GET /d/:slug/meta` — JSON metadata + per-version URLs
 
+## Password protection
+
+If a doc has a password, the public `GET /d/...` routes return `401
+{"error":"password_required"}` until you supply it. Two ways (no auth token needed):
+
+```bash
+# header
+curl -H "X-Doc-Password: s3cret" "$VIBEDEPLOYER_URL/d/u2ykan6"
+# query param
+curl "$VIBEDEPLOYER_URL/d/u2ykan6?password=s3cret"
+```
+
+In a browser, visiting the URL shows an unlock form; once entered, a cookie keeps
+it unlocked. Serialized docs report `"protected": true`.
+
 ## Errors
 
 JSON `{ "error": "<code>", "message": "..." }` with HTTP status:
@@ -72,6 +100,7 @@ JSON `{ "error": "<code>", "message": "..." }` with HTTP status:
 |---|---|---|
 | 400 | `empty_html` / `invalid_custom_slug` | bad input |
 | 401 | `unauthorized` / `invalid_api_key` | missing/bad token |
+| 401 | `password_required` | doc is password-protected; supply `X-Doc-Password` or `?password=` |
 | 404 | `not_found` | no such doc (or not yours) |
 | 409 | `slug_taken` | custom slug already used |
 | 413 | `too_large` | HTML > 5 MB |

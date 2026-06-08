@@ -8,6 +8,7 @@ import {
   listDocsByOwner,
   listVersions,
   updateCustomSlug,
+  setDocPassword,
   deleteDoc,
   ApiError,
 } from "./docs";
@@ -107,6 +108,7 @@ pages.post("/app/docs", async (c) => {
       title: String(body.title ?? "") || undefined,
       html,
       customSlug: String(body.custom_slug ?? "").trim() || undefined,
+      password: String(body.password ?? "").trim() || undefined,
     });
     return c.redirect(`/app/doc/${doc.id}`);
   } catch (e) {
@@ -163,6 +165,26 @@ pages.post("/app/doc/:id/slug", async (c) => {
   } catch (e) {
     return c.redirect(`/app/doc/${doc.id}?msg=` + enc(errMsg(e)) + "&kind=err");
   }
+});
+
+pages.post("/app/doc/:id/password", async (c) => {
+  const user = c.get("user")!;
+  const doc = await getDocById(c.env, c.req.param("id"));
+  if (!doc || doc.owner_id !== user.id) return c.notFound();
+  const body = await c.req.parseBody();
+  const password = String(body.password ?? "");
+  if (!password.trim())
+    return c.redirect(`/app/doc/${doc.id}?msg=` + enc("Enter a password.") + "&kind=err");
+  await setDocPassword(c.env, doc, password);
+  return c.redirect(`/app/doc/${doc.id}?msg=` + enc("Password protection enabled."));
+});
+
+pages.post("/app/doc/:id/password/remove", async (c) => {
+  const user = c.get("user")!;
+  const doc = await getDocById(c.env, c.req.param("id"));
+  if (!doc || doc.owner_id !== user.id) return c.notFound();
+  await setDocPassword(c.env, doc, null);
+  return c.redirect(`/app/doc/${doc.id}?msg=` + enc("Password protection removed."));
 });
 
 pages.post("/app/doc/:id/delete", async (c) => {

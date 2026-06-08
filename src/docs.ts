@@ -1,4 +1,4 @@
-import { Env, randomId, randomSlug, now, sha256Hex, isValidCustomSlug } from "./lib";
+import { Env, randomId, randomSlug, now, sha256Hex, isValidCustomSlug, hashPassword } from "./lib";
 
 export interface Doc {
   id: string;
@@ -8,9 +8,12 @@ export interface Doc {
   title: string;
   latest_version: number;
   visibility: string;
+  password_hash: string | null;
   created_at: number;
   updated_at: number;
 }
+
+export const isProtected = (doc: Doc): boolean => !!doc.password_hash;
 
 export interface Version {
   id: string;
@@ -88,6 +91,7 @@ export interface CreateDocInput {
   html: string;
   customSlug?: string;
   comment?: string;
+  password?: string;
 }
 
 export async function createDoc(env: Env, input: CreateDocInput): Promise<{ doc: Doc; version: Version }> {
@@ -105,12 +109,13 @@ export async function createDoc(env: Env, input: CreateDocInput): Promise<{ doc:
   const docId = randomId();
   const title = (input.title?.trim() || extractTitle(input.html) || "Untitled").slice(0, 200);
   const ts = now();
+  const passwordHash = input.password ? await hashPassword(input.password) : null;
 
   await env.DB.prepare(
-    `INSERT INTO docs (id, owner_id, slug, custom_slug, title, latest_version, visibility, created_at, updated_at)
-     VALUES (?, ?, ?, NULL, ?, 0, 'public', ?, ?)`,
+    `INSERT INTO docs (id, owner_id, slug, custom_slug, title, latest_version, visibility, password_hash, created_at, updated_at)
+     VALUES (?, ?, ?, NULL, ?, 0, 'public', ?, ?, ?)`,
   )
-    .bind(docId, input.ownerId, slug, title, ts, ts)
+    .bind(docId, input.ownerId, slug, title, passwordHash, ts, ts)
     .run();
 
   if (input.customSlug) await setCustomSlug(env, docId, input.customSlug);
@@ -154,6 +159,14 @@ export async function addVersion(env: Env, doc: Doc, input: AddVersionInput): Pr
 
 export async function updateCustomSlug(env: Env, doc: Doc, customSlug: string): Promise<void> {
   await setCustomSlug(env, doc.id, customSlug);
+}
+
+// Set, rotate, or remove a doc's password. Pass null/empty to remove protection.
+export async function setDocPassword(env: Env, doc: Doc, password: string | null): Promise<void> {
+  const hash = password ? await hashPassword(password) : null;
+  await env.DB.prepare("UPDATE docs SET password_hash = ?, updated_at = ? WHERE id = ?")
+    .bind(hash, now(), doc.id)
+    .run();
 }
 
 export async function deleteDoc(env: Env, doc: Doc): Promise<void> {
