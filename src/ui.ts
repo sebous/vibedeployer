@@ -92,6 +92,27 @@ pre{background:rgba(7,18,30,.85);border:1px solid var(--line);border-left:2px so
 .hero h1 span::after{content:"";position:absolute;left:0;right:0;bottom:6px;height:8px;background:rgba(54,214,255,.18)}
 .hero p.lede{font-size:16px;max-width:600px;color:var(--mut);margin:0 0 30px}
 .hero p.lede b{color:var(--fg)}
+
+@media (max-width:640px){
+  .wrap{padding:20px 16px 72px}
+  header.top{padding:12px 16px;flex-wrap:wrap;gap:10px}
+  header.top .brand{font-size:16px}
+  header.top nav.row{gap:8px}
+  button,.btn{padding:8px 12px;letter-spacing:.5px}
+  .card{padding:18px}
+  .card::before,.card::after{display:none}
+  .hero{padding:40px 0 24px}
+  .hero .eyebrow{letter-spacing:3px;margin-bottom:16px}
+  .hero h1{font-size:38px;letter-spacing:-1px;margin-bottom:16px}
+  .hero h1 span::after{bottom:3px;height:5px}
+  .hero p.lede{font-size:15px;margin-bottom:24px}
+  .hero .row{gap:8px}
+  .hero .row .btn{flex:1 1 auto;justify-content:center}
+  .grid{grid-template-columns:1fr !important}
+  pre{font-size:12px;padding:14px}
+  .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .table-wrap table{min-width:520px}
+}
 `;
 
 const FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800;900&family=Chivo+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">`;
@@ -218,7 +239,7 @@ export function dashboard(opts: {
   </div>
 
   <div class="card"><h2>Your docs</h2>
-    <table><thead><tr><th>Doc</th><th>Version</th><th>Updated</th></tr></thead><tbody>${docRows}</tbody></table>
+    <div class="table-wrap"><table><thead><tr><th>Doc</th><th>Version</th><th>Updated</th></tr></thead><tbody>${docRows}</tbody></table></div>
   </div>
 
   <div class="card"><h2>API keys</h2>
@@ -226,7 +247,7 @@ export function dashboard(opts: {
       <input name="name" placeholder="key name (e.g. claude-agent)" required style="max-width:280px">
       <button type="submit">Create key</button>
     </form>
-    <table><thead><tr><th>Name</th><th>Prefix</th><th>Last used</th><th></th></tr></thead><tbody>${keyRows}</tbody></table>
+    <div class="table-wrap"><table><thead><tr><th>Name</th><th>Prefix</th><th>Last used</th><th></th></tr></thead><tbody>${keyRows}</tbody></table></div>
   </div>`;
 }
 
@@ -268,7 +289,7 @@ export function docDetail(opts: { origin: string; doc: Doc; versions: Version[];
   </div>
 
   <div class="card"><h2>Versions</h2>
-    <table><thead><tr><th>Version</th><th></th><th>Size</th><th>Comment</th><th>Created</th></tr></thead><tbody>${verRows}</tbody></table>
+    <div class="table-wrap"><table><thead><tr><th>Version</th><th></th><th>Size</th><th>Comment</th><th>Created</th></tr></thead><tbody>${verRows}</tbody></table></div>
   </div>
 
   <div class="card"><h2>Danger zone</h2>
