@@ -135,12 +135,15 @@ export function flash(msg: string | undefined, kind: "err" | "ok" = "err"): stri
   return msg ? `<div class="flash ${kind}">${escapeHtml(msg)}</div>` : "";
 }
 
-export function landingPage(): string {
+export function landingPage(loggedIn = false): string {
+  const cta = loggedIn
+    ? `<div class="row"><a class="btn" href="/app">Go to dashboard →</a></div>`
+    : `<div class="row"><a class="btn" href="/signup">Get started — free →</a><a class="btn ghost" href="/login">Log in</a></div>`;
   return `<div class="hero">
     <div class="eyebrow">Edge-hosted · versioned · agent-ready</div>
     <h1>Host &amp; version<br>HTML, <span>instantly.</span></h1>
     <p class="lede">Upload an HTML file — get a unique URL. Every upload is a new version with full history and instant rollback. Keep it public, or <b>password-protect</b> any doc. Engineered for humans <b>and</b> agents: log in via the web, or push with an API key.</p>
-    <div class="row"><a class="btn" href="/signup">Get started — free →</a><a class="btn ghost" href="/login">Log in</a></div>
+    ${cta}
   </div>
   <div class="card"><h2>For agents (API)</h2>
   <pre>curl -X POST https://vibedeployer.sebous.workers.dev/api/docs \\
@@ -232,7 +235,10 @@ export function dashboard(opts: {
   ${opts.flashMsg ? flash(opts.flashMsg, opts.flashKind ?? "ok") : ""}
   ${
     opts.newKey
-      ? `<div class="card"><h2>New API key — copy it now</h2><p class="muted">This is the only time the full key is shown.</p><div class="keybox">${escapeHtml(opts.newKey)}</div></div>`
+      ? `<div class="card"><h2>New API key — copy it now</h2><p class="muted">This is the only time the full key is shown.</p>
+          <div class="keybox" id="newkey" data-key="${escapeHtml(opts.newKey)}">${escapeHtml(opts.newKey)}</div>
+          <div style="margin-top:14px"><button type="button" class="ghost" onclick="copyKey(this)">Copy to clipboard</button></div>
+        </div>`
       : ""
   }
 
@@ -259,7 +265,16 @@ export function dashboard(opts: {
       <button type="submit">Create key</button>
     </form>
     <table><thead><tr><th>Name</th><th>Prefix</th><th>Last used</th><th></th></tr></thead><tbody>${keyRows}</tbody></table>
-  </div>`;
+  </div>
+  <script>
+  function copyKey(btn){
+    var el=document.getElementById('newkey'); if(!el) return;
+    var val=el.getAttribute('data-key')||el.textContent;
+    var done=function(){var t=btn.textContent;btn.textContent='Copied!';setTimeout(function(){btn.textContent=t;},1500);};
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(val).then(done,done);}
+    else{var ta=document.createElement('textarea');ta.value=val;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');}catch(e){}document.body.removeChild(ta);done();}
+  }
+  </script>`;
 }
 
 export function docDetail(opts: { origin: string; doc: Doc; versions: Version[]; flashMsg?: string; flashKind?: "ok" | "err" }): string {

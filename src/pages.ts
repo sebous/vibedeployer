@@ -20,8 +20,7 @@ export const pages = new Hono<Vars>();
 // --- Landing -------------------------------------------------------------
 pages.get("/", (c) => {
   const user = c.get("user");
-  if (user) return c.redirect("/app");
-  return c.html(layout("Host & version HTML", landingPage()));
+  return c.html(layout("Host & version HTML", landingPage(!!user), user ?? undefined));
 });
 
 // --- Auth ----------------------------------------------------------------
