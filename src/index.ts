@@ -19,6 +19,32 @@ app.use("*", async (c, next) => {
   c.header("X-Content-Type-Options", "nosniff");
 });
 
+// Cloudflare Web Analytics: stream the beacon into every successful HTML
+// response — both app pages and served docs. The token is public by design.
+app.use("*", async (c, next) => {
+  await next();
+  const token = c.env.CF_BEACON_TOKEN;
+  if (!token || c.res.status !== 200) return;
+  if (!(c.res.headers.get("Content-Type") ?? "").includes("text/html")) return;
+  const beacon = `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "${token}"}'></script>`;
+  // Docs are arbitrary user HTML and may lack a <body> tag; fall back to
+  // appending at end-of-document (browsers hoist the script into body).
+  let injected = false;
+  c.res = new HTMLRewriter()
+    .on("body", {
+      element(el) {
+        injected = true;
+        el.append(beacon, { html: true });
+      },
+    })
+    .onDocument({
+      end(end) {
+        if (!injected) end.append(beacon, { html: true });
+      },
+    })
+    .transform(c.res);
+});
+
 // --- Public doc serving --------------------------------------------------
 const SECURITY = "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; sandbox allow-scripts allow-forms allow-popups allow-same-origin;";
 

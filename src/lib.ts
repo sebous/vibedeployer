@@ -4,6 +4,8 @@ export interface Env {
   DB: D1Database;
   BUCKET: R2Bucket;
   SESSION_SECRET: string;
+  // Cloudflare Web Analytics beacon token; empty/unset disables injection.
+  CF_BEACON_TOKEN?: string;
 }
 
 export interface User {

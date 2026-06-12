@@ -6,6 +6,11 @@ compatibility_flags = ["nodejs_compat"]
 # SESSION_SECRET is provided as a secret in prod (`wrangler secret put SESSION_SECRET`)
 # and via .dev.vars locally.
 
+[vars]
+# Cloudflare Web Analytics beacon token (dash → Analytics & Logs → Web Analytics
+# → Add a site, hostname vibedeployer.sebous.workers.dev). Empty = disabled.
+CF_BEACON_TOKEN = "e31d69e5daf44443bbd89f11551cd649"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "vibedeployer-db"
