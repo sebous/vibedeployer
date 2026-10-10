@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { Env } from "./lib";
+import { AppVars } from "./lib";
 import { requireApiAuth } from "./auth";
 import {
   createDoc,
@@ -9,14 +9,14 @@ import {
   listVersions,
   updateCustomSlug,
   setDocPassword,
+  setDocVisibility,
   deleteDoc,
   docUrl,
   isProtected,
   ApiError,
 } from "./docs";
 
-type Vars = { Bindings: Env; Variables: { user?: { id: string; email: string } } };
-export const api = new Hono<Vars>();
+export const api = new Hono<AppVars>();
 
 api.use("/api/*", requireApiAuth);
 
@@ -26,17 +26,33 @@ function origin(c: any): string {
 
 // Accept either raw HTML body (Content-Type text/html), JSON {html,title,custom_slug,comment},
 // or multipart form with a `file`/`html` field.
-async function readPayload(c: any): Promise<{ html: string; title?: string; customSlug?: string; comment?: string; password?: string }> {
+interface Payload {
+  html: string;
+  title?: string;
+  customSlug?: string;
+  comment?: string;
+  password?: string;
+  visibility?: string;
+}
+
+async function readPayload(c: any): Promise<Payload> {
   const ct = (c.req.header("Content-Type") ?? "").toLowerCase();
   if (ct.includes("application/json")) {
     const j = await c.req.json();
-    return { html: String(j.html ?? ""), title: j.title, customSlug: j.custom_slug, comment: j.comment, password: j.password };
+    return { html: String(j.html ?? ""), title: j.title, customSlug: j.custom_slug, comment: j.comment, password: j.password, visibility: j.visibility };
   }
   if (ct.includes("multipart/form-data") || ct.includes("application/x-www-form-urlencoded")) {
     const b = await c.req.parseBody();
     const file = b.file as File | undefined;
     const html = file && file.size > 0 ? await file.text() : String(b.html ?? "");
-    return { html, title: b.title as string, customSlug: b.custom_slug as string, comment: b.comment as string, password: b.password as string };
+    return {
+      html,
+      title: b.title as string,
+      customSlug: b.custom_slug as string,
+      comment: b.comment as string,
+      password: b.password as string,
+      visibility: b.visibility as string,
+    };
   }
   // raw body (default for `--data-binary @file.html`)
   return {
@@ -45,6 +61,7 @@ async function readPayload(c: any): Promise<{ html: string; title?: string; cust
     customSlug: c.req.query("custom_slug"),
     comment: c.req.query("comment"),
     password: c.req.query("password"),
+    visibility: c.req.query("visibility"),
   };
 }
 
@@ -56,7 +73,9 @@ function serializeDoc(c: any, doc: any) {
     title: doc.title,
     latest_version: doc.latest_version,
     url: docUrl(origin(c), doc),
+    visibility: doc.visibility,
     protected: isProtected(doc),
+    has_password: !!doc.password_hash,
     created_at: doc.created_at,
     updated_at: doc.updated_at,
   };
@@ -68,15 +87,17 @@ api.post("/api/docs", async (c) => {
   try {
     const p = await readPayload(c);
     if (!p.html.trim()) return c.json({ error: "empty_html" }, 400);
-    const { doc, version } = await createDoc(c.env, {
-      ownerId: user.id,
+    const { doc, version, generatedPassword } = await createDoc(c.env, {
+      owner: user,
       html: p.html,
       title: p.title,
       customSlug: p.customSlug?.trim() || undefined,
       comment: p.comment,
       password: p.password?.trim() || undefined,
+      visibility: p.visibility?.trim() || undefined,
     });
-    return c.json({ ...serializeDoc(c, doc), version: version.version }, 201);
+    // `password` appears only when generated; it is never returned again.
+    return c.json({ ...serializeDoc(c, doc), version: version.version, password: generatedPassword }, 201);
   } catch (e) {
     return apiErr(c, e);
   }
@@ -134,6 +155,7 @@ api.put("/api/docs/:slug/slug", async (c) => {
 
 // Set / rotate / remove a doc's password.
 // Body: { "password": "secret" } to set/rotate, { "password": null } (or "") to remove.
+// Removing only works on team docs (they become team-only).
 api.put("/api/docs/:slug/password", async (c) => {
   const user = c.get("user")!;
   const doc = await resolveDoc(c.env, c.req.param("slug"));
@@ -144,6 +166,22 @@ api.put("/api/docs/:slug/password", async (c) => {
     await setDocPassword(c.env, doc, password?.trim() ? password : null);
     const fresh = await resolveDoc(c.env, doc.slug);
     return c.json(serializeDoc(c, fresh));
+  } catch (e) {
+    return apiErr(c, e);
+  }
+});
+
+// Change access mode. Body: { "visibility": "team" | "password" | "public" }.
+// Returns a generated `password` when the new mode needs one and the doc had none.
+api.put("/api/docs/:slug/visibility", async (c) => {
+  const user = c.get("user")!;
+  const doc = await resolveDoc(c.env, c.req.param("slug"));
+  if (!doc || doc.owner_id !== user.id) return c.json({ error: "not_found" }, 404);
+  try {
+    const j = await c.req.json();
+    const { generatedPassword } = await setDocVisibility(c.env, doc, user, String(j.visibility ?? ""));
+    const fresh = await resolveDoc(c.env, doc.slug);
+    return c.json({ ...serializeDoc(c, fresh), password: generatedPassword });
   } catch (e) {
     return apiErr(c, e);
   }

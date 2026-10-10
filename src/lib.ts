@@ -6,18 +6,24 @@ export interface Env {
   SESSION_SECRET: string;
   // Cloudflare Web Analytics beacon token; empty/unset disables injection.
   CF_BEACON_TOKEN?: string;
+  // Google OAuth client used for all sign-ins (publishers and viewers).
+  GOOGLE_CLIENT_ID: string;
+  GOOGLE_CLIENT_SECRET: string;
+  // Comma-separated emails that can open /admin.
+  ADMIN_EMAILS?: string;
 }
 
 export interface User {
   id: string;
   email: string;
+  team_id: string | null;
+  google_sub: string | null;
 }
 
+export type AppVars = { Bindings: Env; Variables: { user?: User } };
+
 // Hono context with our env + the authenticated user (set by middleware).
-export type AppContext = Context<{
-  Bindings: Env;
-  Variables: { user?: User };
-}>;
+export type AppContext = Context<AppVars>;
 
 export const now = () => Date.now();
 
@@ -37,6 +43,11 @@ export function randomSlug(len = 7): string {
   let s = "";
   for (const b of buf) s += SLUG_ALPHABET[b % SLUG_ALPHABET.length];
   return s;
+}
+
+// Generated doc passwords: 4 groups of 4 unambiguous chars, e.g. "k7mq-2xpa-...".
+export function randomPassword(): string {
+  return [0, 1, 2, 3].map(() => randomSlug(4)).join("-");
 }
 
 // Custom slugs: lowercase letters, digits, hyphen; 3-64 chars.

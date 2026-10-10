@@ -3,13 +3,18 @@ main = "src/index.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
-# SESSION_SECRET is provided as a secret in prod (`wrangler secret put SESSION_SECRET`)
-# and via .dev.vars locally.
+# SESSION_SECRET and GOOGLE_CLIENT_SECRET are secrets in prod
+# (`wrangler secret put ...`) and come from .dev.vars locally.
 
 [vars]
 # Cloudflare Web Analytics beacon token (dash → Analytics & Logs → Web Analytics
 # → Add a site, hostname vibedeployer.sebous.workers.dev). Empty = disabled.
 CF_BEACON_TOKEN = "e31d69e5daf44443bbd89f11551cd649"
+# Google OAuth client (Web application) with redirect URI
+# https://vibedeployer.sebous.workers.dev/auth/google/callback
+GOOGLE_CLIENT_ID = ""
+# ADMIN_EMAILS: comma-separated emails that can open /admin (must sign in
+# with Google). Set as a secret so emails stay out of the repo.
 
 [[d1_databases]]
 binding = "DB"

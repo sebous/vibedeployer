@@ -1,6 +1,6 @@
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import type { MiddlewareHandler } from "hono";
-import { AppContext, Env, randomId, now, sha256Hex, hmacSign, verifyPassword, timingSafeEqual } from "./lib";
+import { AppContext, AppVars, User, randomId, now, sha256Hex, hmacSign, verifyPassword, timingSafeEqual } from "./lib";
 import type { Doc } from "./docs";
 
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
@@ -25,11 +25,15 @@ export async function setDocUnlockCookie(c: AppContext, doc: Doc): Promise<void>
   });
 }
 
-// True if the doc is unprotected, already unlocked via cookie, or a correct
-// password was supplied (X-Doc-Password header or ?password= query). When
-// unlocked via a supplied password, the unlock cookie is set for next time.
-export async function isDocUnlocked(c: AppContext, doc: Doc): Promise<boolean> {
-  if (!doc.password_hash) return true;
+// True if the viewer may see the doc: it's public, they own it, they are in
+// its team (team docs), or they have the password via cookie, X-Doc-Password
+// header, or ?password= query. A supplied password sets the unlock cookie.
+export async function canViewDoc(c: AppContext, doc: Doc): Promise<boolean> {
+  if (doc.visibility === "public") return true;
+  const user = c.get("user");
+  if (user && user.id === doc.owner_id) return true;
+  if (doc.visibility === "team" && user?.team_id && user.team_id === doc.team_id) return true;
+  if (!doc.password_hash) return false;
 
   const cookie = getCookie(c, unlockCookieName(doc.id));
   if (cookie && timingSafeEqual(cookie, await unlockToken(c, doc))) return true;
@@ -67,21 +71,21 @@ export async function destroySession(c: AppContext): Promise<void> {
   deleteCookie(c, COOKIE, { path: "/" });
 }
 
+const USER_COLUMNS = "u.id AS id, u.email AS email, u.team_id AS team_id, u.google_sub AS google_sub";
+
 // Resolves the current human (cookie session) if present. Never blocks.
-export const loadSessionUser: MiddlewareHandler<{
-  Bindings: Env;
-  Variables: { user?: { id: string; email: string } };
-}> = async (c, next) => {
+export const loadSessionUser: MiddlewareHandler<AppVars> = async (c, next) => {
   const token = getCookie(c, COOKIE);
   if (token) {
     const row = await c.env.DB.prepare(
-      `SELECT u.id as id, u.email as email, s.expires_at as expires_at
+      `SELECT ${USER_COLUMNS}, s.expires_at AS expires_at
        FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ?`,
     )
       .bind(token)
-      .first<{ id: string; email: string; expires_at: number }>();
+      .first<User & { expires_at: number }>();
     if (row && row.expires_at > now()) {
-      c.set("user", { id: row.id, email: row.email });
+      const { expires_at: _, ...user } = row;
+      c.set("user", user);
     } else if (row) {
       await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?").bind(token).run();
     }
@@ -90,34 +94,44 @@ export const loadSessionUser: MiddlewareHandler<{
 };
 
 // Requires a logged-in human (redirects browsers to /login).
-export const requireUser: MiddlewareHandler<{
-  Bindings: Env;
-  Variables: { user?: { id: string; email: string } };
-}> = async (c, next) => {
+export const requireUser: MiddlewareHandler<AppVars> = async (c, next) => {
   if (!c.get("user")) return c.redirect("/login");
+  await next();
+};
+
+// Admins are listed in ADMIN_EMAILS. The account must have signed in with
+// Google, because legacy email/password accounts never had their email verified.
+export function isAdmin(c: AppContext): boolean {
+  const user = c.get("user");
+  if (!user?.google_sub) return false;
+  const admins = (c.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+  return admins.includes(user.email.toLowerCase());
+}
+
+export const requireAdmin: MiddlewareHandler<AppVars> = async (c, next) => {
+  if (!c.get("user")) return c.redirect("/login?next=/admin");
+  if (!isAdmin(c)) return c.text("Forbidden", 403);
   await next();
 };
 
 // Resolves a user from a Bearer API key OR an existing session cookie.
 // Used to protect the agent-facing REST API. Returns 401 JSON when missing.
-export const requireApiAuth: MiddlewareHandler<{
-  Bindings: Env;
-  Variables: { user?: { id: string; email: string } };
-}> = async (c, next) => {
+export const requireApiAuth: MiddlewareHandler<AppVars> = async (c, next) => {
   // 1) Bearer token
   const auth = c.req.header("Authorization");
   if (auth?.startsWith("Bearer ")) {
     const key = auth.slice(7).trim();
     const keyHash = await sha256Hex(key);
     const row = await c.env.DB.prepare(
-      `SELECT k.id as kid, u.id as uid, u.email as email
+      `SELECT k.id AS kid, ${USER_COLUMNS}
        FROM api_keys k JOIN users u ON u.id = k.user_id
        WHERE k.key_hash = ? AND k.revoked = 0`,
     )
       .bind(keyHash)
-      .first<{ kid: string; uid: string; email: string }>();
+      .first<User & { kid: string }>();
     if (row) {
-      c.set("user", { id: row.uid, email: row.email });
+      const { kid: _, ...user } = row;
+      c.set("user", user);
       c.executionCtx.waitUntil(
         c.env.DB.prepare("UPDATE api_keys SET last_used_at = ? WHERE id = ?").bind(now(), row.kid).run(),
       );
@@ -128,4 +142,17 @@ export const requireApiAuth: MiddlewareHandler<{
   // 2) Fall back to cookie session (so the dashboard can call the same API)
   if (c.get("user")) return next();
   return c.json({ error: "unauthorized", hint: "Send 'Authorization: Bearer vd_...'" }, 401);
+};
+
+// Blocks cross-site form posts and fetches that ride on the session cookie
+// (CSRF). Served docs run in an opaque sandbox origin, so their requests carry
+// `Origin: null` and are rejected here. Bearer-token calls are not cookie-based
+// and skip the check.
+export const sameOriginWrites: MiddlewareHandler<AppVars> = async (c, next) => {
+  const method = c.req.method;
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS") return next();
+  if (c.req.header("Authorization")?.startsWith("Bearer ")) return next();
+  const origin = c.req.header("Origin");
+  if (origin && origin !== new URL(c.req.url).origin) return c.text("Cross-origin request blocked", 403);
+  await next();
 };

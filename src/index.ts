@@ -1,17 +1,20 @@
 import { Hono } from "hono";
-import { Env } from "./lib";
-import { loadSessionUser, isDocUnlocked, setDocUnlockCookie } from "./auth";
+import { AppVars } from "./lib";
+import { loadSessionUser, canViewDoc, setDocUnlockCookie, sameOriginWrites } from "./auth";
 import { pages } from "./pages";
 import { api } from "./api";
+import { google } from "./google";
+import { admin } from "./admin";
+import { getTeam } from "./teams";
 import { resolveDoc, getVersion, listVersions, fetchHtml, isProtected, type Doc } from "./docs";
 import { verifyPassword } from "./lib";
 import { layout, unlockPage } from "./ui";
 
-type Vars = { Bindings: Env; Variables: { user?: { id: string; email: string } } };
-const app = new Hono<Vars>();
+const app = new Hono<AppVars>();
 
 // Make the current human (if any) available everywhere.
 app.use("*", loadSessionUser);
+app.use("*", sameOriginWrites);
 
 // Security headers (the served docs are arbitrary user HTML, so keep them framed-off).
 app.use("*", async (c, next) => {
@@ -46,7 +49,11 @@ app.use("*", async (c, next) => {
 });
 
 // --- Public doc serving --------------------------------------------------
-const SECURITY = "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; sandbox allow-scripts allow-forms allow-popups allow-same-origin;";
+// No `allow-same-origin`: docs run in an opaque origin, so their scripts can't
+// read our cookies or call /api and /app as the viewer. Cost: docs can't use
+// localStorage, sessionStorage, IndexedDB, or document.cookie. The full fix is
+// serving docs from a separate registered domain.
+const SECURITY = "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox;";
 
 // `immutable` is safe only for pinned versions — their content never changes.
 // The latest endpoint keeps short revalidation since its content moves.
@@ -62,16 +69,29 @@ async function serve(c: any, r2Key: string, etag: string, cacheControl = "public
   });
 }
 
-// Returns a 401 lock response when a protected doc is not yet unlocked, else null.
-// Browsers get the HTML unlock form; programmatic callers get JSON.
+// Returns a 401 lock response when the viewer can't see the doc, else null.
+// Browsers get the sign-in / unlock page; programmatic callers get JSON.
 async function gate(c: any, doc: Doc, json = false): Promise<Response | null> {
-  if (await isDocUnlocked(c, doc)) return null;
-  const slug = doc.custom_slug ?? doc.slug;
+  if (await canViewDoc(c, doc)) return null;
   if (json || !(c.req.header("Accept") ?? "").includes("text/html")) {
-    return c.json({ error: "password_required", hint: "Send 'X-Doc-Password' header or '?password='." }, 401);
+    return c.json(
+      { error: "access_denied", visibility: doc.visibility, hint: doc.password_hash ? "Send 'X-Doc-Password' header or '?password='." : undefined },
+      401,
+    );
   }
-  const path = new URL(c.req.url).pathname;
-  return c.html(layout("Protected", unlockPage(slug, path)), 401);
+  return c.html(layout("Protected", await lockedPage(c, doc, new URL(c.req.url).pathname)), 401);
+}
+
+async function lockedPage(c: any, doc: Doc, redirect: string, err?: string): Promise<string> {
+  const team = doc.visibility === "team" && doc.team_id ? await getTeam(c.env, doc.team_id) : null;
+  return unlockPage({
+    slug: doc.custom_slug ?? doc.slug,
+    redirect,
+    teamName: team?.name,
+    hasPassword: !!doc.password_hash,
+    signedInAs: c.get("user")?.email,
+    err,
+  });
 }
 
 // Latest version
@@ -94,7 +114,7 @@ app.post("/d/:slug/unlock", async (c) => {
   const password = String(body.password ?? "");
   const redirect = sanitizeRedirect(String(body.redirect ?? ""), slug);
   if (!doc.password_hash || !(await verifyPassword(password, doc.password_hash))) {
-    return c.html(layout("Protected", unlockPage(slug, redirect, "Incorrect password.")), 401);
+    return c.html(layout("Protected", await lockedPage(c, doc, redirect, "Incorrect password.")), 401);
   }
   await setDocUnlockCookie(c, doc);
   return c.redirect(redirect);
@@ -140,6 +160,8 @@ app.get("/health", (c) => c.json({ ok: true }));
 
 // --- Mount API + human pages --------------------------------------------
 app.route("/", api);
+app.route("/", google);
+app.route("/", admin);
 app.route("/", pages);
 
 // Keep post-unlock redirects on this doc's own path (no open redirects).

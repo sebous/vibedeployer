@@ -1,5 +1,6 @@
 import { escapeHtml } from "./lib";
-import { Doc, Version } from "./docs";
+import { Doc, Version, Visibility } from "./docs";
+import type { TeamSummary, LegacyMigrationRow } from "./teams";
 
 const STYLE = `
 :root{
@@ -123,7 +124,7 @@ export function layout(title: string, body: string, user?: { email: string }): s
     ${
       user
         ? `<span class="muted">${escapeHtml(user.email)}</span><a class="btn ghost" href="/app">Dashboard</a><a class="btn ghost" href="/logout">Log out</a>`
-        : `<a class="btn ghost" href="/login">Log in</a><a class="btn" href="/signup">Sign up</a>`
+        : `<a class="btn" href="/login">Log in</a>`
     }
   </nav>
 </header>
@@ -138,11 +139,11 @@ export function flash(msg: string | undefined, kind: "err" | "ok" = "err"): stri
 export function landingPage(loggedIn = false): string {
   const cta = loggedIn
     ? `<div class="row"><a class="btn" href="/app">Go to dashboard →</a></div>`
-    : `<div class="row"><a class="btn" href="/signup">Get started — free →</a><a class="btn ghost" href="/login">Log in</a></div>`;
+    : `<div class="row"><a class="btn" href="/auth/google">Sign in with Google →</a></div>`;
   return `<div class="hero">
     <div class="eyebrow">Edge-hosted · versioned · agent-ready</div>
     <h1>Host &amp; version<br>HTML, <span>instantly.</span></h1>
-    <p class="lede">Upload an HTML file — get a unique URL. Every upload is a new version with full history and instant rollback. Keep it public, or <b>password-protect</b> any doc. Engineered for humans <b>and</b> agents: log in via the web, or push with an API key.</p>
+    <p class="lede">Upload an HTML file — get a unique URL. Every upload is a new version with full history and instant rollback. Docs are <b>private by default</b>: your team gets in with Google sign-in, everyone else needs the doc password. Public links are opt-in. Engineered for humans <b>and</b> agents: log in via the web, or push with an API key.</p>
     ${cta}
   </div>
   <div class="card"><h2>For agents (API)</h2>
@@ -157,33 +158,66 @@ export function landingPage(loggedIn = false): string {
   <pre>npx skills install sebous/vibedeployer/skills/vibedeployer</pre></div>`;
 }
 
-export function authPage(mode: "login" | "signup", err?: string): string {
-  const isLogin = mode === "login";
+export function loginPage(next: string, err?: string): string {
   return `<div class="card" style="max-width:440px;margin:60px auto">
-    <h2>${isLogin ? "Log in" : "Create account"}</h2>
+    <h2>Log in</h2>
     ${flash(err)}
-    <form method="post" action="/${mode}">
-      <label>Email</label><input name="email" type="email" required autofocus>
-      <label>Password</label><input name="password" type="password" required minlength="8">
-      <div style="margin-top:20px" class="row">
-        <button type="submit">${isLogin ? "Log in →" : "Sign up →"}</button>
-        <a class="muted" href="/${isLogin ? "signup" : "login"}">${isLogin ? "Need an account?" : "Have an account?"}</a>
-      </div>
-    </form>
+    <p class="muted" style="margin:0 0 18px">Sign in with your Google account. If your company is set up as a team, you join it automatically.</p>
+    <a class="btn" href="/auth/google?next=${encodeURIComponent(next)}">Sign in with Google →</a>
   </div>`;
 }
 
-// Shown when a visitor hits a password-protected doc without being unlocked.
-export function unlockPage(slug: string, redirect: string, err?: string): string {
-  return `<div class="card" style="max-width:440px;margin:60px auto">
-    <h2>Protected document</h2>
-    <p class="muted" style="margin:0 0 4px">This page is password-protected. Enter the password to view it.</p>
+// Shown when a visitor can't view a doc yet. Team docs offer Google sign-in;
+// docs with a password offer the unlock form.
+export function unlockPage(opts: {
+  slug: string;
+  redirect: string;
+  teamName?: string;
+  hasPassword: boolean;
+  signedInAs?: string;
+  err?: string;
+}): string {
+  const { slug, redirect, teamName, hasPassword, signedInAs, err } = opts;
+  const teamBlock = teamName
+    ? `<p class="muted" style="margin:0 0 14px">Members of <b style="color:var(--fg)">${escapeHtml(teamName)}</b> can view this doc after signing in.</p>
+       ${
+         signedInAs
+           ? `<p class="flash err">Signed in as ${escapeHtml(signedInAs)}, which is not in ${escapeHtml(teamName)}. <a href="/logout">Switch account</a></p>`
+           : `<a class="btn" href="/auth/google?next=${encodeURIComponent(redirect)}">Sign in with Google →</a>`
+       }`
+    : "";
+  const passwordBlock = hasPassword
+    ? `${teamName ? `<p class="muted" style="margin:22px 0 4px">Not on the team? Enter the password you were given.</p>` : `<p class="muted" style="margin:0 0 4px">This page is password-protected. Enter the password to view it.</p>`}
     ${flash(err)}
     <form method="post" action="/d/${escapeHtml(slug)}/unlock">
       <input type="hidden" name="redirect" value="${escapeHtml(redirect)}">
-      <label>Password</label><input name="password" type="password" required autofocus>
+      <label>Password</label><input name="password" type="password" required${teamName ? "" : " autofocus"}>
       <div style="margin-top:20px"><button type="submit">Unlock →</button></div>
-    </form>
+    </form>`
+    : "";
+  return `<div class="card" style="max-width:440px;margin:60px auto">
+    <h2>Protected document</h2>
+    ${teamBlock}${passwordBlock}
+  </div>`;
+}
+
+const VISIBILITY_LABEL: Record<Visibility, string> = {
+  team: "team + password",
+  password: "password",
+  public: "public",
+};
+
+function visibilityPill(d: Doc): string {
+  const color = d.visibility === "public" ? "var(--mut)" : "var(--amber)";
+  const icon = d.visibility === "public" ? "🌐" : "🔒";
+  return ` <span class="pill" style="color:${color}">${icon} ${VISIBILITY_LABEL[d.visibility]}</span>`;
+}
+
+function newPasswordBox(pw: string): string {
+  return `<div class="card"><h2>Doc password — copy it now</h2>
+    <p class="muted">Share this with people outside your team. This is the only time it is shown; you can set a new one below.</p>
+    <div class="keybox" id="newkey" data-key="${escapeHtml(pw)}">${escapeHtml(pw)}</div>
+    <div style="margin-top:14px"><button type="button" class="ghost" onclick="copyKey(this)">Copy to clipboard</button></div>
   </div>`;
 }
 
@@ -200,17 +234,18 @@ export function dashboard(opts: {
   docs: Doc[];
   keys: ApiKeyRow[];
   newKey?: string;
+  teamName?: string;
+  isAdmin?: boolean;
   flashMsg?: string;
   flashKind?: "ok" | "err";
 }): string {
-  const { origin, docs, keys } = opts;
+  const { origin, docs, keys, teamName } = opts;
   const docRows = docs.length
     ? docs
         .map((d) => {
           const url = `/d/${d.custom_slug ?? d.slug}`;
-          const lock = d.password_hash ? ' <span class="pill" style="color:var(--amber)">🔒 protected</span>' : "";
           return `<tr>
-        <td><a href="/app/doc/${d.id}">${escapeHtml(d.title)}</a>${lock}<br><a class="muted" href="${url}" target="_blank">${escapeHtml(origin + url)}</a></td>
+        <td><a href="/app/doc/${d.id}">${escapeHtml(d.title)}</a>${visibilityPill(d)}<br><a class="muted" href="${url}" target="_blank">${escapeHtml(origin + url)}</a></td>
         <td><span class="pill">v${d.latest_version}</span></td>
         <td class="muted">${fmtDate(d.updated_at)}</td>
       </tr>`;
@@ -231,8 +266,13 @@ export function dashboard(opts: {
         .join("")
     : `<tr><td colspan="4" class="muted">No API keys yet.</td></tr>`;
 
+  const teamLine = teamName
+    ? `Team: <b>${escapeHtml(teamName)}</b>. New docs default to <b>team + password</b>: your team signs in with Google, everyone else needs the doc password.`
+    : `You are not in a team. New docs default to <b>password</b>. Ask an admin to add your company's Google Workspace domain.`;
+
   return `
   ${opts.flashMsg ? flash(opts.flashMsg, opts.flashKind ?? "ok") : ""}
+  <p class="muted">${teamLine}${opts.isAdmin ? ` · <a href="/admin">Admin</a>` : ""}</p>
   ${
     opts.newKey
       ? `<div class="card"><h2>New API key — copy it now</h2><p class="muted">This is the only time the full key is shown.</p>
@@ -250,7 +290,10 @@ export function dashboard(opts: {
         <div><label>Title (optional)</label><input name="title" placeholder="auto-detected from &lt;title&gt;"></div>
         <div><label>Custom slug (optional)</label><input name="custom_slug" placeholder="my-report"></div>
       </div>
-      <label>Password (optional)</label><input name="password" type="password" autocomplete="new-password" placeholder="leave blank for a public doc">
+      <div class="grid" style="grid-template-columns:1fr 1fr">
+        <div><label>Access</label>${visibilitySelect(teamName ? "team" : "password", !!teamName)}</div>
+        <div><label>Password (optional)</label><input name="password" type="password" autocomplete="new-password" placeholder="blank = generate one"></div>
+      </div>
       <div style="margin-top:16px"><button type="submit">Publish</button></div>
     </form>
   </div>
@@ -266,7 +309,10 @@ export function dashboard(opts: {
     </form>
     <table><thead><tr><th>Name</th><th>Prefix</th><th>Last used</th><th></th></tr></thead><tbody>${keyRows}</tbody></table>
   </div>
-  <script>
+  ${COPY_SCRIPT}`;
+}
+
+const COPY_SCRIPT = `<script>
   function copyKey(btn){
     var el=document.getElementById('newkey'); if(!el) return;
     var val=el.getAttribute('data-key')||el.textContent;
@@ -275,9 +321,16 @@ export function dashboard(opts: {
     else{var ta=document.createElement('textarea');ta.value=val;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');}catch(e){}document.body.removeChild(ta);done();}
   }
   </script>`;
-}
 
-export function docDetail(opts: { origin: string; doc: Doc; versions: Version[]; flashMsg?: string; flashKind?: "ok" | "err" }): string {
+export function docDetail(opts: {
+  origin: string;
+  doc: Doc;
+  versions: Version[];
+  teamName?: string;
+  newPassword?: string;
+  flashMsg?: string;
+  flashKind?: "ok" | "err";
+}): string {
   const { origin, doc, versions } = opts;
   const liveUrl = `/d/${doc.custom_slug ?? doc.slug}`;
   const verRows = versions
@@ -292,33 +345,41 @@ export function docDetail(opts: { origin: string; doc: Doc; versions: Version[];
     )
     .join("");
 
-  const protectedDoc = !!doc.password_hash;
-  const lockPill = protectedDoc ? ' <span class="pill" style="color:var(--amber)">🔒 protected</span>' : "";
-  const passwordCard = protectedDoc
-    ? `<div class="card"><h2>Password protection</h2>
-        <p class="muted" style="margin:0 0 14px">This doc is <b style="color:var(--amber)">password-protected</b>. Visitors must enter the password to view any version.</p>
-        <form method="post" action="/app/doc/${doc.id}/password" class="row">
-          <input name="password" type="password" autocomplete="new-password" placeholder="new password" style="max-width:280px">
-          <button type="submit">Change password</button>
+  const hasPassword = !!doc.password_hash;
+  const accessText: Record<Visibility, string> = {
+    team: `Members of your team can view it after Google sign-in. ${hasPassword ? "Everyone else needs the password." : "<b>No password set</b>, so nobody outside the team can view it."}`,
+    password: "Everyone needs the password, including your team.",
+    public: "<b>Anyone with the link</b> can view it.",
+  };
+  const passwordForm =
+    doc.visibility === "public"
+      ? ""
+      : `<form method="post" action="/app/doc/${doc.id}/password" class="row" style="margin-top:14px">
+          <input name="password" type="password" autocomplete="new-password" placeholder="${hasPassword ? "new password" : "set a password"}" style="max-width:280px">
+          <button type="submit">${hasPassword ? "Change password" : "Set password"}</button>
         </form>
-        <form method="post" action="/app/doc/${doc.id}/password/remove" style="margin-top:14px" onsubmit="return confirm('Remove password protection? The doc will become public.')">
-          <button class="danger" type="submit">Remove protection</button>
-        </form>
-      </div>`
-    : `<div class="card"><h2>Password protection</h2>
-        <p class="muted" style="margin:0 0 14px">This doc is <b>public</b> — anyone with the link can view it. Set a password to require it before viewing.</p>
-        <form method="post" action="/app/doc/${doc.id}/password" class="row">
-          <input name="password" type="password" autocomplete="new-password" placeholder="set a password" style="max-width:280px">
-          <button type="submit">Set password</button>
-        </form>
-      </div>`;
+        ${
+          doc.visibility === "team" && hasPassword
+            ? `<form method="post" action="/app/doc/${doc.id}/password/remove" style="margin-top:14px" onsubmit="return confirm('Remove the password? Only team members will be able to view this doc.')">
+                <button class="danger" type="submit">Remove password (team only)</button>
+              </form>`
+            : ""
+        }`;
+  const accessCard = `<div class="card"><h2>Access</h2>
+    <p class="muted" style="margin:0 0 14px">${accessText[doc.visibility]}</p>
+    <form method="post" action="/app/doc/${doc.id}/visibility" class="row"${doc.visibility === "public" ? "" : ` onsubmit="return this.visibility.value!=='public'||confirm('Make this doc public? Anyone with the link will see it.')"`}>
+      <div style="max-width:280px;flex:1">${visibilitySelect(doc.visibility, !!opts.teamName)}</div>
+      <button type="submit">Update access</button>
+    </form>
+    ${passwordForm}
+  </div>`;
 
   return `
   <p><a href="/app">← Dashboard</a></p>
   ${opts.flashMsg ? flash(opts.flashMsg, opts.flashKind ?? "ok") : ""}
   <div class="card">
     <h2>${escapeHtml(doc.title)}</h2>
-    <p>Live URL: <a href="${liveUrl}" target="_blank">${escapeHtml(origin + liveUrl)}</a> <span class="pill">always latest</span>${lockPill}</p>
+    <p>Live URL: <a href="${liveUrl}" target="_blank">${escapeHtml(origin + liveUrl)}</a> <span class="pill">always latest</span>${visibilityPill(doc)}</p>
     <p class="muted">Random slug: <code>${escapeHtml(doc.slug)}</code></p>
     <form method="post" action="/app/doc/${doc.id}/slug" class="row">
       <input name="custom_slug" value="${escapeHtml(doc.custom_slug ?? "")}" placeholder="custom-slug" style="max-width:280px">
@@ -326,7 +387,8 @@ export function docDetail(opts: { origin: string; doc: Doc; versions: Version[];
     </form>
   </div>
 
-  ${passwordCard}
+  ${opts.newPassword ? newPasswordBox(opts.newPassword) : ""}
+  ${accessCard}
 
   <div class="card"><h2>Upload new version</h2>
     <form method="post" action="/app/doc/${doc.id}/versions" enctype="multipart/form-data">
@@ -345,6 +407,105 @@ export function docDetail(opts: { origin: string; doc: Doc; versions: Version[];
     <form method="post" action="/app/doc/${doc.id}/delete" onsubmit="return confirm('Delete this doc and all versions? This cannot be undone.')">
       <button class="danger" type="submit">Delete doc</button>
     </form>
+  </div>
+  ${COPY_SCRIPT}`;
+}
+
+function visibilitySelect(selected: Visibility, hasTeam: boolean): string {
+  const opt = (v: Visibility, label: string, disabled = false) =>
+    `<option value="${v}"${v === selected ? " selected" : ""}${disabled ? " disabled" : ""}>${label}</option>`;
+  return `<select name="visibility">
+    ${opt("team", hasTeam ? "Team + password for others" : "Team (you are not in a team)", !hasTeam)}
+    ${opt("password", "Password for everyone")}
+    ${opt("public", "Public — anyone with the link")}
+  </select>`;
+}
+
+// --- Admin ---------------------------------------------------------------
+
+const METHOD_LABEL: Record<string, string> = { google: "Google Workspace" };
+
+function teamForm(action: string, team?: TeamSummary): string {
+  return `<form method="post" action="${action}">
+    <div class="grid" style="grid-template-columns:1fr 1fr">
+      <div><label>Name</label><input name="name" required value="${escapeHtml(team?.name ?? "")}" placeholder="STRV"></div>
+      <div><label>Sign-in method</label><select name="sign_in_method"><option value="google" selected>Google Workspace</option></select></div>
+    </div>
+    <label>Workspace domains (comma-separated)</label>
+    <input name="domains" required value="${escapeHtml(team?.domains.join(", ") ?? "")}" placeholder="strv.com">
+    <p class="muted" style="margin:8px 0 0">A Google account joins this team when its verified Workspace domain is listed. Personal Gmail accounts never match.</p>
+    <div style="margin-top:16px"><button type="submit">${team ? "Save team" : "Create team"}</button></div>
+  </form>`;
+}
+
+export function adminPage(opts: { teams: TeamSummary[]; legacyCount: number; flashMsg?: string; flashKind?: "ok" | "err" }): string {
+  const rows = opts.teams.length
+    ? opts.teams
+        .map(
+          (t) => `<tr>
+        <td><a href="/admin/teams/${t.id}">${escapeHtml(t.name)}</a></td>
+        <td>${METHOD_LABEL[t.sign_in_method] ?? escapeHtml(t.sign_in_method)}</td>
+        <td>${t.domains.map((d) => `<code>${escapeHtml(d)}</code>`).join(" ")}</td>
+        <td>${t.members}</td>
+        <td>${t.docs}</td>
+      </tr>`,
+        )
+        .join("")
+    : `<tr><td colspan="5" class="muted">No teams yet.</td></tr>`;
+  const legacy = opts.legacyCount
+    ? `<div class="card"><h2>Legacy public docs</h2>
+        <p class="muted" style="margin:0 0 14px"><b style="color:var(--amber)">${opts.legacyCount}</b> docs are still public from before access modes existed. Create teams first, then migrate. Each doc moves to its owner's team (by email domain) or to password-only, and gets a new password. <b>Passwords are shown once on the next page.</b></p>
+        <form method="post" action="/admin/migrate-legacy" onsubmit="return confirm('Protect all ${opts.legacyCount} legacy public docs now?')">
+          <button type="submit">Migrate legacy docs</button>
+        </form>
+      </div>`
+    : "";
+  return `
+  ${opts.flashMsg ? flash(opts.flashMsg, opts.flashKind ?? "ok") : ""}
+  <div class="card"><h2>Teams</h2>
+    <table><thead><tr><th>Name</th><th>Sign-in</th><th>Domains</th><th>Members</th><th>Docs</th></tr></thead><tbody>${rows}</tbody></table>
+  </div>
+  <div class="card"><h2>New team</h2>${teamForm("/admin/teams")}</div>
+  ${legacy}`;
+}
+
+export function adminTeamPage(opts: {
+  team: TeamSummary;
+  members: { email: string; created_at: number }[];
+  flashMsg?: string;
+  flashKind?: "ok" | "err";
+}): string {
+  const { team, members } = opts;
+  const rows = members.length
+    ? members.map((m) => `<tr><td>${escapeHtml(m.email)}</td><td class="muted">${fmtDate(m.created_at)}</td></tr>`).join("")
+    : `<tr><td colspan="2" class="muted">Nobody yet. Members join on their next Google sign-in.</td></tr>`;
+  return `
+  <p><a href="/admin">← Admin</a></p>
+  ${opts.flashMsg ? flash(opts.flashMsg, opts.flashKind ?? "ok") : ""}
+  <div class="card"><h2>${escapeHtml(team.name)}</h2>${teamForm(`/admin/teams/${team.id}`, team)}</div>
+  <div class="card"><h2>Members (${team.members})</h2>
+    <table><thead><tr><th>Email</th><th>Joined vibedeployer</th></tr></thead><tbody>${rows}</tbody></table>
+  </div>`;
+}
+
+export function adminMigrationResult(origin: string, rows: LegacyMigrationRow[]): string {
+  const body = rows.length
+    ? rows
+        .map(
+          (r) => `<tr>
+        <td><a href="/d/${escapeHtml(r.slug)}" target="_blank">${escapeHtml(r.title)}</a><br><span class="muted">${escapeHtml(origin)}/d/${escapeHtml(r.slug)}</span></td>
+        <td>${escapeHtml(r.owner_email)}</td>
+        <td>${r.visibility === "team" ? `team: ${escapeHtml(r.team_name ?? "")}` : "password"}</td>
+        <td><code>${escapeHtml(r.password)}</code></td>
+      </tr>`,
+        )
+        .join("")
+    : `<tr><td colspan="4" class="muted">Nothing to migrate.</td></tr>`;
+  return `
+  <p><a href="/admin">← Admin</a></p>
+  <div class="card"><h2>Migrated ${rows.length} docs</h2>
+    <p class="muted"><b style="color:var(--amber)">Copy these passwords now.</b> They are not shown again. Owners can set new ones from their dashboard.</p>
+    <table><thead><tr><th>Doc</th><th>Owner</th><th>Access</th><th>Password</th></tr></thead><tbody>${body}</tbody></table>
   </div>`;
 }
 
