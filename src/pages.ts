@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { AppVars, randomId, now, generateApiKey, sha256Hex } from "./lib";
 import { destroySession, requireUser, isAdmin } from "./auth";
 import { getTeam } from "./teams";
@@ -53,7 +54,7 @@ pages.get("/app", async (c) => {
         origin: url.origin,
         docs,
         keys,
-        newKey: c.req.query("key"),
+        newKey: takeReveal(c, "vd_reveal_key", "/app"),
         teamName: team?.name,
         isAdmin: isAdmin(c),
         flashMsg: c.req.query("msg"),
@@ -88,7 +89,8 @@ pages.post("/app/docs", async (c) => {
       password: String(body.password ?? "").trim() || undefined,
       visibility: String(body.visibility ?? "").trim() || undefined,
     });
-    return c.redirect(`/app/doc/${doc.id}` + passwordQuery(generatedPassword));
+    revealOnce(c, "vd_reveal_pw", `/app/doc/${doc.id}`, generatedPassword);
+    return c.redirect(`/app/doc/${doc.id}`);
   } catch (e) {
     return c.redirect("/app?msg=" + enc(errMsg(e)) + "&kind=err");
   }
@@ -111,7 +113,7 @@ pages.get("/app/doc/:id", async (c) => {
         doc,
         versions,
         teamName: team?.name,
-        newPassword: c.req.query("pw"),
+        newPassword: takeReveal(c, "vd_reveal_pw", `/app/doc/${doc.id}`),
         flashMsg: c.req.query("msg"),
         flashKind: (c.req.query("kind") as "ok" | "err") ?? "ok",
       }),
@@ -181,7 +183,8 @@ pages.post("/app/doc/:id/visibility", async (c) => {
   const body = await c.req.parseBody();
   try {
     const { generatedPassword } = await setDocVisibility(c.env, doc, user, String(body.visibility ?? ""));
-    return c.redirect(`/app/doc/${doc.id}?msg=` + enc("Access updated.") + passwordQuery(generatedPassword, "&"));
+    revealOnce(c, "vd_reveal_pw", `/app/doc/${doc.id}`, generatedPassword);
+    return c.redirect(`/app/doc/${doc.id}?msg=` + enc("Access updated."));
   } catch (e) {
     return c.redirect(`/app/doc/${doc.id}?msg=` + enc(errMsg(e)) + "&kind=err");
   }
@@ -206,7 +209,8 @@ pages.post("/app/keys", async (c) => {
   )
     .bind(randomId(), user.id, name, key.slice(0, 11), await sha256Hex(key), now())
     .run();
-  return c.redirect("/app?key=" + enc(key) + "&msg=" + enc("API key created."));
+  revealOnce(c, "vd_reveal_key", "/app", key);
+  return c.redirect("/app?msg=" + enc("API key created."));
 });
 
 pages.post("/app/keys/:id/revoke", async (c) => {
@@ -228,9 +232,27 @@ async function keyRows(c: any, userId: string) {
 }
 
 const enc = encodeURIComponent;
-// Generated passwords ride the redirect once so the owner can copy them,
-// same as new API keys.
-const passwordQuery = (pw: string | undefined, sep = "?") => (pw ? `${sep}pw=${enc(pw)}` : "");
+// New API keys and generated doc passwords are shown once after a redirect.
+// They travel in a short-lived cookie scoped to the target page, not in the
+// URL, so they stay out of browser history, server logs, and Referer headers.
+// Separate names because the "/app" key cookie is also sent to /app/doc/* pages.
+type RevealKind = "vd_reveal_key" | "vd_reveal_pw";
+const REVEAL_TTL_S = 60;
+
+function revealOnce(c: any, name: RevealKind, path: string, secret: string | undefined): void {
+  if (!secret) return;
+  setCookie(c, name, secret, { httpOnly: true, secure: true, sameSite: "Strict", path, maxAge: REVEAL_TTL_S });
+}
+
+// Reads and deletes the secret. The page that shows it must not be cached,
+// or the back button would show it again.
+function takeReveal(c: any, name: RevealKind, path: string): string | undefined {
+  const secret = getCookie(c, name);
+  if (!secret) return undefined;
+  deleteCookie(c, name, { path, secure: true });
+  c.header("Cache-Control", "no-store");
+  return secret;
+}
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) return e.message;
   return "Something went wrong.";
