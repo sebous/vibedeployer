@@ -17,10 +17,12 @@ AUTH=(-H "Authorization: Bearer ${VIBEDEPLOYER_TOKEN}")
 usage() {
   cat >&2 <<EOF
 usage:
-  vibedeploy create <file.html> [--slug NAME] [--title TITLE] [--password PW]   create a doc (+v1)
+  vibedeploy create <file.html> [--slug NAME] [--title TITLE]
+                    [--team | --public | --password PW]          create a doc (+v1)
   vibedeploy push   <slug> <file.html> [--comment MSG]          add a new version
   vibedeploy list                                               list your docs
   vibedeploy get    <slug>                                      doc + version metadata
+  vibedeploy access <slug> <team|password|public>               change who can view a doc
   vibedeploy password <slug> <PW|--remove>                      set/rotate/remove doc password
   vibedeploy delete <slug>                                      delete a doc
 EOF
@@ -40,6 +42,8 @@ case "$cmd" in
       --slug)     q="${q}&custom_slug=$2"; shift 2;;
       --title)    q="${q}&title=$(printf %s "$2" | sed 's/ /%20/g')"; shift 2;;
       --password) q="${q}&password=$(printf %s "$2" | sed 's/ /%20/g')"; shift 2;;
+      --team)     q="${q}&visibility=team"; shift;;
+      --public)   q="${q}&visibility=public"; shift;;
       *) die "unknown flag: $1";;
     esac; done
     curl -fsS -X POST "${URL}/api/docs?${q#&}" "${AUTH[@]}" \
@@ -58,6 +62,12 @@ case "$cmd" in
     echo ;;
   list)   curl -fsS "${URL}/api/docs" "${AUTH[@]}"; echo ;;
   get)    [ -n "${1:-}" ] || usage; curl -fsS "${URL}/api/docs/$1" "${AUTH[@]}"; echo ;;
+  access)
+    slug="${1:-}"; mode="${2:-}"; shift 2 || usage
+    case "$mode" in team|password|public) ;; *) usage;; esac
+    curl -fsS -X PUT "${URL}/api/docs/${slug}/visibility" "${AUTH[@]}" \
+      -H "Content-Type: application/json" -d "{\"visibility\":\"${mode}\"}"
+    echo ;;
   password)
     slug="${1:-}"; pw="${2:-}"; shift 2 || usage
     [ -n "$slug" ] && [ -n "$pw" ] || usage

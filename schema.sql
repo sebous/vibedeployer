@@ -1,11 +1,30 @@
 -- vibedeployer D1 schema
 
+CREATE TABLE IF NOT EXISTS teams (
+  id             TEXT PRIMARY KEY,
+  name           TEXT NOT NULL,
+  sign_in_method TEXT NOT NULL DEFAULT 'google', -- only 'google' today
+  created_at     INTEGER NOT NULL
+);
+
+-- Email domains that map a Google Workspace account to a team.
+CREATE TABLE IF NOT EXISTS team_domains (
+  domain  TEXT PRIMARY KEY,
+  team_id TEXT NOT NULL REFERENCES teams(id)
+);
+CREATE INDEX IF NOT EXISTS idx_team_domains_team ON team_domains(team_id);
+
 CREATE TABLE IF NOT EXISTS users (
   id           TEXT PRIMARY KEY,
   email        TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
-  created_at   INTEGER NOT NULL
+  password_hash TEXT NOT NULL,          -- legacy; '' for Google-only accounts
+  created_at   INTEGER NOT NULL,
+  google_sub   TEXT,                    -- Google account id
+  google_hd    TEXT,                    -- Google Workspace domain, if any
+  team_id      TEXT REFERENCES teams(id)
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub);
+CREATE INDEX IF NOT EXISTS idx_users_team ON users(team_id);
 
 CREATE TABLE IF NOT EXISTS sessions (
   id         TEXT PRIMARY KEY,         -- random session token
@@ -35,10 +54,12 @@ CREATE TABLE IF NOT EXISTS docs (
   custom_slug    TEXT UNIQUE,           -- optional user-chosen slug
   title          TEXT NOT NULL,
   latest_version INTEGER NOT NULL DEFAULT 0,
-  visibility     TEXT NOT NULL DEFAULT 'public',
-  password_hash  TEXT,                  -- optional; when set, the doc is password-protected
+  visibility     TEXT NOT NULL DEFAULT 'password', -- 'team' | 'password' | 'public'
+  password_hash  TEXT,                  -- required for 'password'; optional outsider password for 'team'
   created_at     INTEGER NOT NULL,
-  updated_at     INTEGER NOT NULL
+  updated_at     INTEGER NOT NULL,
+  team_id        TEXT REFERENCES teams(id), -- team that can view a 'team' doc
+  legacy         INTEGER NOT NULL DEFAULT 0 -- 1 = public before access modes existed
 );
 CREATE INDEX IF NOT EXISTS idx_docs_owner ON docs(owner_id);
 

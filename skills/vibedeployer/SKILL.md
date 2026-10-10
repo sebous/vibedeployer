@@ -32,7 +32,8 @@ scripts/vibedeploy.sh create report.html --title "Q2 Report" --slug q2-report
 scripts/vibedeploy.sh push q2-report report.html --comment "fixed totals"
 ```
 
-Then give the user the `"url"` field from the response.
+Then give the user the `"url"` field from the response. If the response has a
+`"password"` field, give that to the user too: it is shown only once.
 
 ## Workflow
 
@@ -45,23 +46,36 @@ Then give the user the `"url"` field from the response.
 
 | Command | Purpose |
 |---|---|
-| `create <file.html> [--slug NAME] [--title T] [--password PW]` | New doc + version 1 |
+| `create <file.html> [--slug NAME] [--title T] [--team\|--public\|--password PW]` | New doc + version 1 |
 | `push <slug> <file.html> [--comment MSG]` | Add a new version |
 | `list` | List your docs |
 | `get <slug>` | Doc + version history |
+| `access <slug> <team\|password\|public>` | Change who can view a doc |
 | `password <slug> <PW\|--remove>` | Set/rotate/remove the doc password |
 | `delete <slug>` | Delete a doc and all versions |
 
 `--slug` is optional; without it a random short slug is generated. Slugs are
 `a-z 0-9 -`, 3–64 chars. Files cap at 5 MB.
 
-## Password protection (optional)
+## Access (private by default)
 
-Pass `--password` on `create`, or run `password <slug> <PW>` later, to gate a doc
-(one password covers all its versions). Viewers then need it — share the link
-**and** the password. To fetch a protected doc yourself, add an `X-Doc-Password`
-header or `?password=` query; in a browser an unlock form appears. Remove with
-`password <slug> --remove`.
+Every doc has one access mode:
+
+- `team` (default when your account is in a team): teammates open it after
+  Google sign-in; everyone else needs the doc password.
+- `password` (default when you have no team, or with `--password PW`):
+  everyone needs the password, teammates included.
+- `public`: anyone with the link. Only use `--public` when the user explicitly
+  asks for a public page.
+
+When no password is given, the server generates one and returns it once as
+`"password"`. To share with someone outside the team (for example a client),
+send the link **and** the password. Change the mode later with
+`access <slug> <mode>`; rotate the password with `password <slug> <PW>`.
+`password <slug> --remove` only works on `team` docs and makes them team-only.
+
+To fetch a protected doc yourself, add an `X-Doc-Password` header or
+`?password=` query.
 
 ## Raw API (no script)
 

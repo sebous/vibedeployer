@@ -1,4 +1,4 @@
-import { Env, randomId, randomSlug, now, sha256Hex, isValidCustomSlug, hashPassword } from "./lib";
+import { Env, User, randomId, randomSlug, now, sha256Hex, isValidCustomSlug, hashPassword, randomPassword } from "./lib";
 
 export interface Doc {
   id: string;
@@ -7,13 +7,21 @@ export interface Doc {
   custom_slug: string | null;
   title: string;
   latest_version: number;
-  visibility: string;
+  visibility: Visibility;
   password_hash: string | null;
   created_at: number;
   updated_at: number;
+  team_id: string | null;
+  legacy: number;
 }
 
-export const isProtected = (doc: Doc): boolean => !!doc.password_hash;
+// team:     members of doc.team_id get in after Google sign-in; others need the password.
+// password: everyone needs the password.
+// public:   anyone with the link.
+export type Visibility = "team" | "password" | "public";
+export const VISIBILITIES: Visibility[] = ["team", "password", "public"];
+
+export const isProtected = (doc: Doc): boolean => doc.visibility !== "public";
 
 export interface Version {
   id: string;
@@ -86,15 +94,46 @@ export class ApiError extends Error {
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB per HTML file
 
 export interface CreateDocInput {
-  ownerId: string;
+  owner: User;
   title?: string;
   html: string;
   customSlug?: string;
   comment?: string;
   password?: string;
+  visibility?: string;
 }
 
-export async function createDoc(env: Env, input: CreateDocInput): Promise<{ doc: Doc; version: Version }> {
+// Defaults: a password with no explicit mode means "password for everyone"
+// (the pre-teams meaning); otherwise team members get in and outsiders need
+// a password, or everyone needs one if the owner has no team.
+function defaultVisibility(owner: User, password?: string): Visibility {
+  if (password) return "password";
+  return owner.team_id ? "team" : "password";
+}
+
+function parseVisibility(v: string | undefined): Visibility | undefined {
+  if (!v) return undefined;
+  if (!(VISIBILITIES as string[]).includes(v)) {
+    throw new ApiError(400, "invalid_visibility", "Use one of: team, password, public.");
+  }
+  return v as Visibility;
+}
+
+// Checks the owner can use this mode and returns the password to store.
+// `generated` is set when we had to create one; it is shown to the owner once.
+function resolveAccess(owner: User, visibility: Visibility, password: string | undefined, hasPassword: boolean) {
+  if (visibility === "team" && !owner.team_id) {
+    throw new ApiError(400, "no_team", "Your account is not in a team. Use 'password' or 'public'.");
+  }
+  if (visibility === "public" || password || hasPassword) return { password, generated: undefined };
+  const generated = randomPassword();
+  return { password: generated, generated };
+}
+
+export async function createDoc(
+  env: Env,
+  input: CreateDocInput,
+): Promise<{ doc: Doc; version: Version; generatedPassword?: string }> {
   const bytes = new TextEncoder().encode(input.html);
   if (bytes.byteLength > MAX_BYTES) throw new ApiError(413, "too_large", "HTML exceeds 5 MB limit.");
 
@@ -109,13 +148,16 @@ export async function createDoc(env: Env, input: CreateDocInput): Promise<{ doc:
   const docId = randomId();
   const title = (input.title?.trim() || extractTitle(input.html) || "Untitled").slice(0, 200);
   const ts = now();
-  const passwordHash = input.password ? await hashPassword(input.password) : null;
+  const visibility = parseVisibility(input.visibility) ?? defaultVisibility(input.owner, input.password);
+  const { password, generated } = resolveAccess(input.owner, visibility, input.password, false);
+  const passwordHash = password && visibility !== "public" ? await hashPassword(password) : null;
+  const teamId = visibility === "team" ? input.owner.team_id : null;
 
   await env.DB.prepare(
-    `INSERT INTO docs (id, owner_id, slug, custom_slug, title, latest_version, visibility, password_hash, created_at, updated_at)
-     VALUES (?, ?, ?, NULL, ?, 0, 'public', ?, ?, ?)`,
+    `INSERT INTO docs (id, owner_id, slug, custom_slug, title, latest_version, visibility, password_hash, team_id, created_at, updated_at)
+     VALUES (?, ?, ?, NULL, ?, 0, ?, ?, ?, ?, ?)`,
   )
-    .bind(docId, input.ownerId, slug, title, passwordHash, ts, ts)
+    .bind(docId, input.owner.id, slug, title, visibility, passwordHash, teamId, ts, ts)
     .run();
 
   if (input.customSlug) await setCustomSlug(env, docId, input.customSlug);
@@ -123,7 +165,7 @@ export async function createDoc(env: Env, input: CreateDocInput): Promise<{ doc:
   const created = (await getDocById(env, docId))!;
   const version = await addVersion(env, created, { html: input.html, comment: input.comment });
   const doc = (await getDocById(env, docId))!; // refresh: latest_version now set
-  return { doc, version };
+  return { doc, version, generatedPassword: generated };
 }
 
 export interface AddVersionInput {
@@ -161,12 +203,32 @@ export async function updateCustomSlug(env: Env, doc: Doc, customSlug: string): 
   await setCustomSlug(env, doc.id, customSlug);
 }
 
-// Set, rotate, or remove a doc's password. Pass null/empty to remove protection.
+// Set, rotate, or remove a doc's password. Removing is only allowed on team
+// docs (it makes them team-only); a 'password' doc must switch mode first.
 export async function setDocPassword(env: Env, doc: Doc, password: string | null): Promise<void> {
+  if (!password && doc.visibility === "password") {
+    throw new ApiError(400, "password_required", "This doc needs a password. Change its access mode to remove it.");
+  }
   const hash = password ? await hashPassword(password) : null;
-  await env.DB.prepare("UPDATE docs SET password_hash = ?, updated_at = ? WHERE id = ?")
-    .bind(hash, now(), doc.id)
+  // Setting a password on a public doc protects it for everyone.
+  const visibility = hash && doc.visibility === "public" ? "password" : doc.visibility;
+  await env.DB.prepare("UPDATE docs SET password_hash = ?, visibility = ?, legacy = 0, updated_at = ? WHERE id = ?")
+    .bind(hash, visibility, now(), doc.id)
     .run();
+}
+
+// Switch a doc between team / password / public. Returns a generated password
+// when the new mode needs one and the doc had none.
+export async function setDocVisibility(env: Env, doc: Doc, owner: User, value: string): Promise<{ generatedPassword?: string }> {
+  const visibility = parseVisibility(value);
+  if (!visibility) throw new ApiError(400, "invalid_visibility", "Use one of: team, password, public.");
+  const { password, generated } = resolveAccess(owner, visibility, undefined, !!doc.password_hash);
+  const hash = password ? await hashPassword(password) : doc.password_hash;
+  const teamId = visibility === "team" ? owner.team_id : null;
+  await env.DB.prepare("UPDATE docs SET visibility = ?, team_id = ?, password_hash = ?, legacy = 0, updated_at = ? WHERE id = ?")
+    .bind(visibility, teamId, hash, now(), doc.id)
+    .run();
+  return { generatedPassword: generated };
 }
 
 export async function deleteDoc(env: Env, doc: Doc): Promise<void> {
